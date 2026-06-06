@@ -1,5 +1,8 @@
-﻿[tool.vercel]
-entrypoint = "app_iot:app"
+[project]
+name = "nuroagro"
+version = "1.0.0"
+description = "NuroAgro Flask and React smart agriculture application"
+requires-python = ">=3.10"
 
-[tool.vercel.scripts]
-build = "npm --prefix frontend_jsx ci && npm --prefix frontend_jsx run build"
+[tool.vercel]
+entrypoint = "app_iot:app"
