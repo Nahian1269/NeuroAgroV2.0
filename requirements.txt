@@ -13,8 +13,7 @@ psycopg2-binary==2.9.7  # For PostgreSQL (optional)
 
 # YOLO & Computer Vision
 ultralytics==8.0.205
-opencv-python==4.8.1.78
-opencv-contrib-python==4.8.1.78
+opencv-python-headless==4.8.1.78
 supervision==0.16.0
 numpy==1.24.3
 Pillow==10.0.0
@@ -57,3 +56,4 @@ pyserial==3.5  # For serial communication
 
 # API Documentation (optional)
 flasgger==0.9.7.1
+

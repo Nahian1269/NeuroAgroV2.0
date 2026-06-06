@@ -3,9 +3,14 @@
 import os
 from pathlib import Path
 
-os.environ.setdefault('YOLO_CONFIG_DIR', os.path.join(os.getcwd(), 'static', 'yolo_config'))
+os.environ.setdefault('YOLO_CONFIG_DIR', os.environ.get('YOLO_CONFIG_DIR', os.path.join(os.getcwd(), 'static', 'yolo_config')))
 
-import cv2
+try:
+    import cv2
+    CV2_IMPORT_ERROR = None
+except Exception as exc:
+    cv2 = None
+    CV2_IMPORT_ERROR = str(exc)
 
 
 CLASS_ALIASES = {
@@ -205,7 +210,26 @@ def draw_inner_label(image, x1, y1, x2, y2, label, color, thickness):
 
 def analyze_image_for_disease(image_path, model=None, logger=None):
     """Analyze an image, save a boxed/colored annotated copy, and return diagnosis data."""
-    model = model or load_model()
+    if cv2 is None:
+        return {
+            'error': f'OpenCV is unavailable in this runtime: {CV2_IMPORT_ERROR}',
+            'primary_disease': None,
+            'confidence': 0,
+            'detections': {},
+            'boxes': [],
+            'recommendations': []
+        }
+    try:
+        model = model or load_model()
+    except Exception as exc:
+        return {
+            'error': f'YOLO model is unavailable in this runtime: {exc}',
+            'primary_disease': None,
+            'confidence': 0,
+            'detections': {},
+            'boxes': [],
+            'recommendations': []
+        }
     image = cv2.imread(str(image_path))
     if image is None:
         return {
@@ -289,3 +313,4 @@ def analyze_image_for_disease(image_path, model=None, logger=None):
         'annotated_image_path': annotated_path,
         'annotated_image_url': static_url_for_path(annotated_path)
     }
+

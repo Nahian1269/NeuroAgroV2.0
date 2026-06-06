@@ -1,15 +1,16 @@
-﻿"""
+"""
     NuroAgro Flask Web Application
     Main application file with all route integrations
 """
 
 import os
-os.environ.setdefault('YOLO_CONFIG_DIR', os.path.join(os.getcwd(), 'static', 'yolo_config'))
+IS_VERCEL = bool(os.environ.get('VERCEL') or os.environ.get('VERCEL_ENV'))
+if IS_VERCEL:
+    os.environ.setdefault('YOLO_CONFIG_DIR', '/tmp/yolo_config')
+    os.environ.setdefault('WEATHER_CALIBRATION_PATH', '/tmp/weather_calibration.json')
+else:
+    os.environ.setdefault('YOLO_CONFIG_DIR', os.path.join(os.getcwd(), 'static', 'yolo_config'))
 
-import cv2
-import supervision as sv
-from ultralytics import YOLO
-import numpy as np
 from flask import Flask, request, url_for, send_from_directory, jsonify, session, redirect, flash
 from flask_cors import CORS
 from flask_session import Session
@@ -44,13 +45,14 @@ load_dotenv()
 app = Flask(__name__)
 
 # Configuration
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///vertical_farming.db')
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL') or ('sqlite:////tmp/vertical_farming.db' if IS_VERCEL else 'sqlite:///vertical_farming.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'nuroagro-dev-secret-change-in-production')
 app.config['SESSION_TYPE'] = 'filesystem'
+app.config['SESSION_FILE_DIR'] = os.environ.get('SESSION_FILE_DIR') or ('/tmp/flask_session' if IS_VERCEL else 'flask_session')
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_SECURE'] = os.environ.get('SESSION_COOKIE_SECURE', 'false').lower() == 'true'
-app.config['UPLOAD_FOLDER'] = 'static/uploads/'
+app.config['UPLOAD_FOLDER'] = os.environ.get('UPLOAD_FOLDER') or ('/tmp/nuroagro_uploads' if IS_VERCEL else 'static/uploads/')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 app.config['DEVICE_API_KEY'] = os.environ.get('DEVICE_API_KEY', 'farm-device-key')
 app.config['ADMIN_PASSWORD'] = os.environ.get('ADMIN_PASSWORD', app.config['SECRET_KEY'])
@@ -97,31 +99,31 @@ db.init_app(app)
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# Create upload directory
+# Create runtime directories. Vercel functions can only write to /tmp.
+os.makedirs(app.config['SESSION_FILE_DIR'], exist_ok=True)
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'disease_images'), exist_ok=True)
+os.makedirs(os.environ.get('YOLO_CONFIG_DIR', '/tmp/yolo_config' if IS_VERCEL else os.path.join(os.getcwd(), 'static', 'yolo_config')), exist_ok=True)
 
-# Load YOLO model for disease detection
-try:
-    model = YOLO("best.pt")
-    logger.info("YOLO model loaded successfully")
-    logger.info(f"Model class names: {model.names}")
-except Exception as e:
-    logger.error(f"Failed to load YOLO model: {e}")
-    model = None
+model = None
+model_load_error = None
 
-# Define color map for classes
-COLOR_MAP = {
-    "Blight": sv.Color(255, 0, 0),
-    "Brown Spot": sv.Color(0, 0, 255),
-    "False Smut": sv.Color(0, 255, 0),
-    "Healthy": sv.Color(255, 255, 0),
-    "Leaf Smut": sv.Color(128, 0, 128),
-    "Rice blast": sv.Color(255, 165, 0),
-    "Stem Rot": sv.Color(255, 0, 255),
-    "Tungro": sv.Color(0, 255, 255),
-    "Background": sv.Color(255, 255, 255)
-}
+
+def load_yolo_model():
+    """Load YOLO only when disease detection is requested."""
+    global model, model_load_error
+    if model is not None or model_load_error is not None:
+        return model
+    try:
+        from ultralytics import YOLO
+        model = YOLO("best.pt")
+        logger.info("YOLO model loaded successfully")
+        logger.info(f"Model class names: {model.names}")
+    except Exception as exc:
+        model_load_error = str(exc)
+        logger.error(f"Failed to load YOLO model: {exc}")
+        model = None
+    return model
 
 # ==================== ROUTE REGISTRATION ====================
 
@@ -662,11 +664,12 @@ def allowed_file(filename):
 
 
 def analyze_image_for_disease(image_path):
-    """Analyze image for crop diseases using YOLO"""
+    """Analyze image for crop diseases using YOLO."""
     try:
-        if not model:
-            return {'error': 'Model not loaded', 'primary_disease': None, 'confidence': 0}
-        return run_disease_analysis(image_path, model=model, logger=logger)
+        active_model = load_yolo_model()
+        if not active_model:
+            return {'error': f'Model not loaded: {model_load_error or "unknown error"}', 'primary_disease': None, 'confidence': 0}
+        return run_disease_analysis(image_path, model=active_model, logger=logger)
     except Exception as e:
         logger.error(f"Error analyzing image: {str(e)}")
         return {'error': str(e), 'primary_disease': None, 'confidence': 0, 'detections': {}, 'boxes': []}
@@ -785,9 +788,14 @@ def ensure_demo_data():
     logger.info("Demo user and ESP32 device created.")
 
 
-if __name__ == '__main__':
-    app = create_app()
+try:
+    create_app()
+except Exception as exc:
+    logger.error("Database initialization skipped: %s", exc)
 
+if __name__ == '__main__':
     # Run app
     app.run(debug=True, host='0.0.0.0', port=5001)
+
+
 
