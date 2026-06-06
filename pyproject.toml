@@ -1,0 +1,5 @@
+﻿[tool.vercel]
+entrypoint = "app_iot:app"
+
+[tool.vercel.scripts]
+build = "npm --prefix frontend_jsx ci && npm --prefix frontend_jsx run build"
