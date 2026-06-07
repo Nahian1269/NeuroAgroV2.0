@@ -16,6 +16,8 @@ from flask_cors import CORS
 from flask_session import Session
 from werkzeug.utils import secure_filename
 import logging
+from threading import Thread
+from time import sleep
 from datetime import datetime, timedelta
 import json
 from dotenv import load_dotenv
@@ -38,6 +40,7 @@ from routes.api import (
     mirror_user,
 )
 from disease_ml import analyze_image_for_disease as run_disease_analysis
+from disease_ml import load_model as load_disease_model
 
 # ==================== FLASK APP CONFIGURATION ====================
 
@@ -107,6 +110,7 @@ os.makedirs(os.environ.get('YOLO_CONFIG_DIR', '/tmp/yolo_config' if IS_VERCEL el
 
 model = None
 model_load_error = None
+model_preload_started = False
 
 
 def load_yolo_model():
@@ -115,8 +119,7 @@ def load_yolo_model():
     if model is not None or model_load_error is not None:
         return model
     try:
-        from ultralytics import YOLO
-        model = YOLO("best.pt")
+        model = load_disease_model("best.pt")
         logger.info("YOLO model loaded successfully")
         logger.info(f"Model class names: {model.names}")
     except Exception as exc:
@@ -124,6 +127,23 @@ def load_yolo_model():
         logger.error(f"Failed to load YOLO model: {exc}")
         model = None
     return model
+
+
+def warm_disease_model_async():
+    """Load the disease model after startup so the first scan is not cold."""
+    global model_preload_started
+    if model_preload_started or os.environ.get('DISEASE_MODEL_PRELOAD', 'false').lower() in {'0', 'false', 'no', 'off'}:
+        return
+    model_preload_started = True
+
+    def preload():
+        try:
+            sleep(float(os.environ.get('DISEASE_MODEL_PRELOAD_DELAY', '5')))
+            load_yolo_model()
+        except Exception as exc:
+            logger.warning("Disease model preload skipped: %s", exc)
+
+    Thread(target=preload, name='disease-model-preload', daemon=True).start()
 
 # ==================== ROUTE REGISTRATION ====================
 
@@ -178,6 +198,16 @@ def record_visitor_once():
     except Exception as exc:
         db.session.rollback()
         logger.debug("Visitor log skipped: %s", exc)
+
+
+@app.route('/api/health')
+def health_check():
+    """Small readiness endpoint for dev scripts and uptime checks."""
+    return jsonify({
+        'ok': True,
+        'status': 'ready',
+        'frontend_built': frontend_dist_available()
+    })
 
 
 @app.route('/assets/<path:filename>')
@@ -699,6 +729,7 @@ def create_app():
         ensure_runtime_schema()
         ensure_demo_data()
         logger.info("Database initialized!")
+    warm_disease_model_async()
     return app
 
 

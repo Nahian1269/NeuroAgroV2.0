@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+from threading import Lock
 
 os.environ.setdefault('YOLO_CONFIG_DIR', os.environ.get('YOLO_CONFIG_DIR', os.path.join(os.getcwd(), 'static', 'yolo_config')))
 
@@ -35,15 +36,19 @@ CLASS_STYLES = {
 
 DEFAULT_STYLE = {'bgr': (80, 80, 80), 'hex': '#505050'}
 HEALTHY_CLASSES = {'healthy', 'background'}
+MAX_ANALYSIS_EDGE = int(os.environ.get('DISEASE_MAX_ANALYSIS_EDGE', '1280'))
 _MODEL_CACHE = None
+_MODEL_LOCK = Lock()
 
 
 def load_model(model_path='best.pt'):
     """Load YOLO lazily for API routes that do not already have a model."""
     global _MODEL_CACHE
     if _MODEL_CACHE is None:
-        from ultralytics import YOLO
-        _MODEL_CACHE = YOLO(model_path)
+        with _MODEL_LOCK:
+            if _MODEL_CACHE is None:
+                from ultralytics import YOLO
+                _MODEL_CACHE = YOLO(model_path)
     return _MODEL_CACHE
 
 
@@ -70,6 +75,18 @@ def annotated_path_for(image_path):
     path = Path(image_path)
     suffix = path.suffix or '.jpg'
     return str(path.with_name(f'{path.stem}_annotated{suffix}'))
+
+
+def resize_for_analysis(image, max_edge=MAX_ANALYSIS_EDGE):
+    """Keep inference responsive by bounding very large uploads."""
+    height, width = image.shape[:2]
+    longest_edge = max(height, width)
+    if not max_edge or longest_edge <= max_edge:
+        return image
+
+    scale = max_edge / longest_edge
+    next_size = (max(1, int(width * scale)), max(1, int(height * scale)))
+    return cv2.resize(image, next_size, interpolation=cv2.INTER_AREA)
 
 
 def severity_for(primary_disease, confidence, disease_box_count):
@@ -240,8 +257,9 @@ def analyze_image_for_disease(image_path, model=None, logger=None):
             'boxes': []
         }
 
-    results = model(image)[0]
-    annotated_image = image.copy()
+    analysis_image = resize_for_analysis(image)
+    results = model.predict(analysis_image, imgsz=640, verbose=False)[0]
+    annotated_image = analysis_image.copy()
     boxes_payload = []
     disease_counts = {}
     confidence_totals = {}

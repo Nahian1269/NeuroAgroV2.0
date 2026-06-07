@@ -56,14 +56,18 @@ const LOCAL_BACKEND_BASE = 'http://127.0.0.1:5001';
 
 function resolveApiBase() {
   const configuredBase = import.meta.env.VITE_API_BASE;
-  if (configuredBase) return configuredBase.replace(/\/$/, '');
   if (typeof window === 'undefined') return '';
 
   const localHosts = new Set(['127.0.0.1', 'localhost', '0.0.0.0']);
+  const frontendDevPorts = new Set(['3000', '5173', '5174', '5175', '5176']);
   const { protocol, hostname, port } = window.location;
-  if (protocol === 'file:' || (localHosts.has(hostname) && port && port !== '5001')) {
-    return LOCAL_BACKEND_BASE;
+  const isLocalFrontendDev = localHosts.has(hostname) && frontendDevPorts.has(port);
+
+  if (protocol === 'file:' || isLocalFrontendDev) {
+    return configuredBase ? configuredBase.replace(/\/$/, '') : LOCAL_BACKEND_BASE;
   }
+
+  if (configuredBase && !localHosts.has(hostname)) return configuredBase.replace(/\/$/, '');
   return '';
 }
 
@@ -646,17 +650,23 @@ export default function App() {
     const data = new FormData();
     data.append('image', image);
     data.append('device_id', deviceId);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 120000);
     try {
-      const response = await apiFetch('/api/disease-detection', { method: 'POST', body: data });
+      const response = await apiFetch('/api/disease-detection', { method: 'POST', body: data, signal: controller.signal });
       const result = await response.json();
       setDiseaseResult(response.ok ? result : { error: result.error || 'Disease detection failed.' });
       if (response.ok) {
         await loadDiseaseHistory(deviceId);
-        await refresh(deviceId, true);
       }
-    } catch {
-      setDiseaseResult({ error: 'Could not upload image for analysis.' });
+    } catch (error) {
+      setDiseaseResult({
+        error: error.name === 'AbortError'
+          ? 'Disease analysis is taking too long. Try a smaller, clearer image and scan again.'
+          : 'Could not upload image for analysis.'
+      });
     } finally {
+      clearTimeout(timeout);
       setLoading(false);
     }
   }

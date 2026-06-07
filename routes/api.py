@@ -12,6 +12,8 @@ from models import (
 from datetime import datetime, timedelta
 import json
 from functools import wraps
+from threading import Thread
+from time import perf_counter
 from disease_ml import (
     analyze_image_for_disease as run_disease_analysis,
     generate_disease_recommendations as build_disease_recommendations
@@ -27,6 +29,24 @@ from weather_agent import (
 )
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
+
+
+def mirror_disease_artifacts_async(app, detection_id, notification_id=None):
+    """Mirror remote disease records without delaying the user's diagnosis response."""
+    def worker():
+        with app.app_context():
+            try:
+                detection = DiseaseDetection.query.get(detection_id)
+                if detection:
+                    mirror_disease_detection(detection)
+                if notification_id:
+                    notification = Notification.query.get(notification_id)
+                    if notification:
+                        mirror_notification(notification)
+            except Exception as exc:
+                app.logger.warning("Background disease mirror failed: %s", exc)
+
+    Thread(target=worker, name=f'disease-mirror-{detection_id}', daemon=True).start()
 
 # ==================== AUTHENTICATION DECORATOR ====================
 
@@ -1392,7 +1412,9 @@ def upload_disease_image():
         if not user:
             return jsonify({'error': 'User not found'}), 404
 
+        started_at = perf_counter()
         detection_results = analyze_image_for_disease(filepath)
+        current_app.logger.info("Disease inference finished in %.2fs for %s", perf_counter() - started_at, filename)
         original_image_url = f'/static/uploads/disease_images/{filename}'
         diagnosis_image_url = detection_results.get('annotated_image_url') or original_image_url
         
@@ -1411,15 +1433,18 @@ def upload_disease_image():
         
         db.session.add(detection)
         db.session.commit()
-        mirror_disease_detection(detection)
+        notification_id = None
         
         # Create notification if disease detected
         if detection.primary_disease:
-            create_notification(
+            notification = create_notification(
                 user,
                 f"Disease Detected: {detection.primary_disease} ({detection.disease_confidence:.1f}% confidence)",
-                'disease_alert'
+                'disease_alert',
+                mirror_remote=False
             )
+            notification_id = notification.id if notification else None
+        mirror_disease_artifacts_async(current_app._get_current_object(), detection.id, notification_id)
         
         current_app.logger.info(f"Disease image analyzed: {detection.primary_disease}")
         
@@ -1477,7 +1502,9 @@ def upload_user_disease_image():
         filepath = os.path.join(upload_folder, filename)
         image_file.save(filepath)
 
+        started_at = perf_counter()
         detection_results = analyze_image_for_disease(filepath)
+        current_app.logger.info("Disease inference finished in %.2fs for %s", perf_counter() - started_at, filename)
         original_image_url = f'/static/uploads/disease_images/{filename}'
         diagnosis_image_url = detection_results.get('annotated_image_url') or original_image_url
 
@@ -1496,14 +1523,17 @@ def upload_user_disease_image():
 
         db.session.add(detection)
         db.session.commit()
-        mirror_disease_detection(detection)
+        notification_id = None
 
         if detection.primary_disease:
-            create_notification(
+            notification = create_notification(
                 user,
                 f"Disease Detected: {detection.primary_disease} ({detection.disease_confidence:.1f}% confidence)",
-                'disease_alert'
+                'disease_alert',
+                mirror_remote=False
             )
+            notification_id = notification.id if notification else None
+        mirror_disease_artifacts_async(current_app._get_current_object(), detection.id, notification_id)
 
         return jsonify({
             'status': 'success',
@@ -2018,7 +2048,7 @@ def build_project_advice(project):
     }
 
 
-def create_notification(user, message, notification_type='info'):
+def create_notification(user, message, notification_type='info', mirror_remote=True):
     """Create notification for user"""
     try:
         notification = Notification(
@@ -2030,9 +2060,12 @@ def create_notification(user, message, notification_type='info'):
         )
         db.session.add(notification)
         db.session.commit()
-        mirror_notification(notification)
+        if mirror_remote:
+            mirror_notification(notification)
+        return notification
     except Exception as e:
         current_app.logger.error(f"Error creating notification: {str(e)}")
+        return None
 
 
 def mirror_sensor_reading(reading):
