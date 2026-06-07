@@ -36,7 +36,11 @@ CLASS_STYLES = {
 
 DEFAULT_STYLE = {'bgr': (80, 80, 80), 'hex': '#505050'}
 HEALTHY_CLASSES = {'healthy', 'background'}
-MAX_ANALYSIS_EDGE = int(os.environ.get('DISEASE_MAX_ANALYSIS_EDGE', '1280'))
+MAX_ANALYSIS_EDGE = int(os.environ.get('DISEASE_MAX_ANALYSIS_EDGE', '960'))
+YOLO_IMAGE_SIZE = int(os.environ.get('DISEASE_YOLO_IMGSZ', '512'))
+CONFIDENCE_THRESHOLD = float(os.environ.get('DISEASE_CONFIDENCE_THRESHOLD', '0.20'))
+POSSIBLE_CONFIDENCE_THRESHOLD = float(os.environ.get('DISEASE_POSSIBLE_CONFIDENCE_THRESHOLD', '0.12'))
+HEALTHY_CONFIDENCE = float(os.environ.get('DISEASE_HEALTHY_CONFIDENCE', '0.0'))
 _MODEL_CACHE = None
 _MODEL_LOCK = Lock()
 
@@ -99,6 +103,10 @@ def severity_for(primary_disease, confidence, disease_box_count):
     if confidence >= 35:
         return 'Medium'
     return 'Low'
+
+
+def is_disease_class(class_name):
+    return bool(class_name) and canonical_class_name(class_name).lower() not in HEALTHY_CLASSES
 
 
 def generate_disease_recommendations(disease, confidence=0):
@@ -258,11 +266,19 @@ def analyze_image_for_disease(image_path, model=None, logger=None):
         }
 
     analysis_image = resize_for_analysis(image)
-    results = model.predict(analysis_image, imgsz=640, verbose=False)[0]
+    results = model.predict(
+        analysis_image,
+        imgsz=YOLO_IMAGE_SIZE,
+        conf=POSSIBLE_CONFIDENCE_THRESHOLD,
+        verbose=False
+    )[0]
     annotated_image = analysis_image.copy()
     boxes_payload = []
     disease_counts = {}
     confidence_totals = {}
+    possible_disease_counts = {}
+    possible_confidence_totals = {}
+    discarded_low_confidence = 0
 
     boxes = getattr(results, 'boxes', None)
     if boxes is not None and len(boxes) > 0:
@@ -271,6 +287,10 @@ def analyze_image_for_disease(image_path, model=None, logger=None):
             class_id = int(class_id.item() if hasattr(class_id, 'item') else class_id)
             confidence = float(conf.item() if hasattr(conf, 'item') else conf)
             class_name = canonical_class_name(results.names[class_id])
+            is_disease = is_disease_class(class_name)
+            if is_disease and confidence < POSSIBLE_CONFIDENCE_THRESHOLD:
+                discarded_low_confidence += 1
+                continue
             color = class_style(class_name)['bgr']
             hex_color = class_style(class_name)['hex']
             x1, y1, x2, y2 = [int(round(value)) for value in xyxy.tolist()]
@@ -279,18 +299,24 @@ def analyze_image_for_disease(image_path, model=None, logger=None):
             y1 = max(0, min(y1, image.shape[0] - 1))
             y2 = max(0, min(y2, image.shape[0] - 1))
 
-            disease_counts[class_name] = disease_counts.get(class_name, 0) + 1
-            confidence_totals[class_name] = confidence_totals.get(class_name, 0.0) + confidence
+            if is_disease and confidence < CONFIDENCE_THRESHOLD:
+                possible_disease_counts[class_name] = possible_disease_counts.get(class_name, 0) + 1
+                possible_confidence_totals[class_name] = possible_confidence_totals.get(class_name, 0.0) + confidence
+            else:
+                disease_counts[class_name] = disease_counts.get(class_name, 0) + 1
+                confidence_totals[class_name] = confidence_totals.get(class_name, 0.0) + confidence
 
             cv2.rectangle(annotated_image, (x1, y1), (x2, y2), color, thickness)
-            draw_label(annotated_image, x1, y1, f'{class_name} {confidence * 100:.1f}%', color, thickness)
+            label_prefix = 'Possible ' if is_disease and confidence < CONFIDENCE_THRESHOLD else ''
+            draw_label(annotated_image, x1, y1, f'{label_prefix}{class_name} {confidence * 100:.1f}%', color, thickness)
             draw_inner_label(annotated_image, x1, y1, x2, y2, class_name, color, thickness)
 
             boxes_payload.append({
                 'class_name': class_name,
                 'confidence': round(confidence * 100, 2),
                 'box': [x1, y1, x2, y2],
-                'color': hex_color
+                'color': hex_color,
+                'possible': bool(is_disease and confidence < CONFIDENCE_THRESHOLD)
             })
 
     diagnosis_counts = {
@@ -306,12 +332,33 @@ def analyze_image_for_disease(image_path, model=None, logger=None):
             key=lambda name: (candidate_counts[name], confidence_totals.get(name, 0))
         )
         confidence = (confidence_totals[primary_disease] / disease_counts[primary_disease]) * 100
+    elif possible_disease_counts:
+        primary_disease = max(
+            possible_disease_counts,
+            key=lambda name: (possible_disease_counts[name], possible_confidence_totals.get(name, 0))
+        )
+        confidence = (possible_confidence_totals[primary_disease] / possible_disease_counts[primary_disease]) * 100
     else:
         primary_disease = 'Healthy'
+        confidence = HEALTHY_CONFIDENCE
 
     disease_box_count = sum(diagnosis_counts.values())
+    possible_box_count = sum(possible_disease_counts.values())
     severity = severity_for(primary_disease, confidence, disease_box_count)
     recommendations = generate_disease_recommendations(primary_disease, confidence)
+    if possible_box_count and not disease_box_count:
+        recommendations = [
+            f'Possible {primary_disease} was found below the strong-confidence threshold.',
+            'Retake the image in bright light with the leaf filling most of the frame.',
+            'Use this result as a warning and confirm with another scan before treatment.',
+            *recommendations
+        ]
+    elif discarded_low_confidence and primary_disease == 'Healthy':
+        recommendations = [
+            'Only very weak disease marks were found, so this scan is treated as healthy/uncertain.',
+            'Retake the image in bright light with the leaf filling most of the frame.',
+            *recommendations
+        ]
 
     annotated_path = annotated_path_for(image_path)
     cv2.imwrite(annotated_path, annotated_image)
@@ -323,7 +370,11 @@ def analyze_image_for_disease(image_path, model=None, logger=None):
         'primary_disease': primary_disease,
         'confidence': confidence,
         'detections': disease_counts,
+        'possible_detections': possible_disease_counts,
         'boxes': boxes_payload,
+        'discarded_low_confidence': discarded_low_confidence,
+        'confidence_threshold': CONFIDENCE_THRESHOLD * 100,
+        'possible_confidence_threshold': POSSIBLE_CONFIDENCE_THRESHOLD * 100,
         'severity': severity,
         'recommendations': recommendations,
         'original_image_path': str(image_path),

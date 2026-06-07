@@ -12,13 +12,11 @@ from __future__ import annotations
 import json
 import math
 import os
+import subprocess
 import sys
 from datetime import datetime, timedelta
 from statistics import mean
 
-import joblib
-import numpy as np
-import requests
 from dotenv import load_dotenv
 
 
@@ -45,12 +43,29 @@ FEATURE_FIELDS = [
 MODEL_FILE = os.environ.get("WEATHER_MODEL_PATH", "weather_prediction_transformer_model.keras")
 SCALER_FILE = os.environ.get("WEATHER_SCALER_PATH", "scaler.pkl")
 CALIBRATION_FILE = os.environ.get("WEATHER_CALIBRATION_PATH", "weather_calibration.json")
+MODEL_ENABLED = os.environ.get("WEATHER_MODEL_ENABLED", "true").lower() not in {"0", "false", "no", "off"}
+MODEL_TIMEOUT_SECONDS = float(os.environ.get("WEATHER_TRANSFORMER_TIMEOUT_SECONDS", "12"))
+MODEL_TIMEOUT_STATUS = "fallback_prediction: transformer disabled or unavailable"
+
+PLAUSIBLE_RANGES = {
+    "max_temperature": (-10.0, 55.0),
+    "min_temperature": (-20.0, 45.0),
+    "apparent_temperature": (-20.0, 60.0),
+    "humidity": (0.0, 100.0),
+    "pressure": (850.0, 1100.0),
+    "rainfall": (0.0, 250.0),
+}
 
 _MODEL = None
 _MODEL_ERROR = None
 _SCALER = None
 _SCALER_ERROR = None
 _CALIBRATION = None
+
+
+def _np():
+    import numpy as np
+    return np
 
 
 def _round(value, digits=2):
@@ -60,8 +75,15 @@ def _round(value, digits=2):
         return None
 
 
+def _clamp(value, low, high):
+    try:
+        return max(low, min(high, float(value)))
+    except (TypeError, ValueError):
+        return None
+
+
 def _record_value(record, field, default=0.0):
-    value = getattr(record, field, None)
+    value = record.get(field) if isinstance(record, dict) else getattr(record, field, None)
     if value is None:
         return default
     try:
@@ -74,6 +96,12 @@ def _load_model():
     global _MODEL, _MODEL_ERROR
     if _MODEL is not None or _MODEL_ERROR is not None:
         return _MODEL
+    if not MODEL_ENABLED:
+        _MODEL_ERROR = "Transformer model disabled by WEATHER_MODEL_ENABLED=false"
+        return None
+    if not os.path.exists(MODEL_FILE):
+        _MODEL_ERROR = f"Transformer model file not found: {MODEL_FILE}"
+        return None
 
     try:
         from tensorflow import keras
@@ -128,8 +156,14 @@ def _load_scaler():
     global _SCALER, _SCALER_ERROR
     if _SCALER is not None or _SCALER_ERROR is not None:
         return _SCALER
+    if not os.path.exists(SCALER_FILE):
+        _SCALER_ERROR = f"Scaler file not found: {SCALER_FILE}"
+        return None
 
     try:
+        import joblib
+        np = _np()
+
         sys.modules.setdefault("numpy._core", np.core)
         sys.modules.setdefault("numpy._core.multiarray", np.core.multiarray)
         sys.modules.setdefault("numpy._core.numeric", np.core.numeric)
@@ -165,15 +199,63 @@ def _save_calibration(payload):
 
 def model_status():
     model = _load_model()
-    scaler = _load_scaler()
     if model is not None:
+        scaler = _load_scaler()
         return "transformer_model_loaded" if scaler is not None else "transformer_loaded_without_scaler"
     if _MODEL_ERROR:
         return f"fallback_prediction: {_MODEL_ERROR[:90]}"
     return "fallback_prediction"
 
 
+def _sanitize_prediction(values, latest=None):
+    if values is None:
+        return None
+    np = _np()
+
+    arr = np.array(values, dtype=float).reshape(-1)
+    if arr.size < len(WEATHER_FIELDS) or not np.all(np.isfinite(arr[:len(WEATHER_FIELDS)])):
+        return None
+
+    payload = {
+        WEATHER_FIELDS[index]: float(arr[index])
+        for index in range(len(WEATHER_FIELDS))
+    }
+
+    # Some exported models already return physical values; others return scaled values.
+    # If the output is outside agronomic/weather reality, reject it and use fallback.
+    for field, value in payload.items():
+        low, high = PLAUSIBLE_RANGES[field]
+        if value < low * 2 or value > high * 2:
+            return None
+
+    latest_temp = _record_value(latest, "temperature", None) if latest else None
+    latest_humidity = _record_value(latest, "humidity", None) if latest else None
+    latest_rain = _record_value(latest, "rain_level", None) if latest else None
+
+    if latest_temp is not None:
+        payload["max_temperature"] = max(payload["max_temperature"], latest_temp - 1.5)
+        payload["min_temperature"] = min(payload["min_temperature"], latest_temp + 1.5)
+        if payload["min_temperature"] > payload["max_temperature"]:
+            midpoint = latest_temp
+            payload["min_temperature"] = midpoint - 1.0
+            payload["max_temperature"] = midpoint + 1.0
+    if latest_humidity is not None:
+        payload["humidity"] = (payload["humidity"] * 0.65) + (latest_humidity * 0.35)
+    if latest_rain is not None and latest_rain > 55:
+        payload["rainfall"] = max(payload["rainfall"], latest_rain * 0.35)
+
+    return np.array([
+        _clamp(payload["max_temperature"], *PLAUSIBLE_RANGES["max_temperature"]),
+        _clamp(payload["min_temperature"], *PLAUSIBLE_RANGES["min_temperature"]),
+        _clamp(payload["apparent_temperature"], *PLAUSIBLE_RANGES["apparent_temperature"]),
+        _clamp(payload["humidity"], *PLAUSIBLE_RANGES["humidity"]),
+        _clamp(payload["pressure"], *PLAUSIBLE_RANGES["pressure"]),
+        _clamp(payload["rainfall"], *PLAUSIBLE_RANGES["rainfall"]),
+    ], dtype=float)
+
+
 def _feature_window(readings, project=None, window_size=24):
+    np = _np()
     items = list(readings or [])[:window_size]
     items.reverse()
 
@@ -212,6 +294,7 @@ def _feature_window(readings, project=None, window_size=24):
 
 
 def _transform_features(window):
+    np = _np()
     scaler = _load_scaler()
     if scaler is None or not hasattr(scaler, "transform"):
         return window
@@ -225,6 +308,7 @@ def _transform_features(window):
 
 
 def _inverse_scale_prediction(values):
+    np = _np()
     scaler = _load_scaler()
     if scaler is None or not hasattr(scaler, "inverse_transform"):
         return values
@@ -239,9 +323,62 @@ def _inverse_scale_prediction(values):
         return values
 
 
-def _model_prediction(window):
+def _latest_payload(latest):
+    if latest is None:
+        return None
+    return {
+        field: _record_value(latest, field, None)
+        for field in FEATURE_FIELDS
+    }
+
+
+def _model_prediction_subprocess(window, latest=None):
+    global _MODEL_ERROR
+    np = _np()
+    if os.environ.get("WEATHER_TRANSFORMER_SUBPROCESS", "true").lower() in {"0", "false", "no", "off"}:
+        return None
+
+    env = os.environ.copy()
+    env["WEATHER_TRANSFORMER_SUBPROCESS"] = "false"
+    payload = {
+        "window": np.array(window, dtype=float).tolist(),
+        "latest": _latest_payload(latest),
+    }
+    try:
+        result = subprocess.run(
+            [sys.executable, os.path.abspath(__file__), "--predict-json"],
+            input=json.dumps(payload),
+            text=True,
+            capture_output=True,
+            timeout=MODEL_TIMEOUT_SECONDS,
+            env=env,
+            check=False,
+        )
+        if result.returncode != 0:
+            _MODEL_ERROR = (result.stderr or result.stdout or "Transformer subprocess failed").strip()[:240]
+            return None
+        parsed = json.loads((result.stdout or "{}").strip().splitlines()[-1])
+        if parsed.get("error"):
+            _MODEL_ERROR = parsed["error"]
+        prediction = parsed.get("prediction")
+        return np.array(prediction, dtype=float) if prediction is not None else None
+    except subprocess.TimeoutExpired:
+        _MODEL_ERROR = f"Transformer subprocess exceeded {MODEL_TIMEOUT_SECONDS:.0f}s"
+        return None
+    except Exception as exc:
+        _MODEL_ERROR = str(exc)
+        return None
+
+
+def _model_prediction_inprocess(window, latest=None):
+    global _MODEL_ERROR
+    np = _np()
+    started_at = datetime.utcnow()
     model = _load_model()
     if model is None:
+        return None
+    if (datetime.utcnow() - started_at).total_seconds() > MODEL_TIMEOUT_SECONDS:
+        _MODEL_ERROR = f"Transformer model load exceeded {MODEL_TIMEOUT_SECONDS:.0f}s"
         return None
 
     model_input = _transform_features(window)
@@ -263,12 +400,29 @@ def _model_prediction(window):
         else:
             payload = model_input.reshape(1, model_input.shape[0], model_input.shape[1])
 
+        prediction_started_at = datetime.utcnow()
         prediction = np.array(model.predict(payload, verbose=0)).reshape(-1)
+        if (datetime.utcnow() - prediction_started_at).total_seconds() > MODEL_TIMEOUT_SECONDS:
+            _MODEL_ERROR = f"Transformer prediction exceeded {MODEL_TIMEOUT_SECONDS:.0f}s"
+            return None
         if prediction.size < len(WEATHER_FIELDS):
             return None
-        return _inverse_scale_prediction(prediction[:len(WEATHER_FIELDS)])
-    except Exception:
+        direct = _sanitize_prediction(prediction[:len(WEATHER_FIELDS)], latest=latest)
+        if direct is not None:
+            return direct
+        return _sanitize_prediction(_inverse_scale_prediction(prediction[:len(WEATHER_FIELDS)]), latest=latest)
+    except Exception as exc:
+        _MODEL_ERROR = str(exc)
         return None
+
+
+def _model_prediction(window, latest=None):
+    prediction = _model_prediction_subprocess(window, latest=latest)
+    if prediction is not None:
+        return prediction
+    if os.environ.get("WEATHER_TRANSFORMER_SUBPROCESS", "true").lower() in {"0", "false", "no", "off"}:
+        return _model_prediction_inprocess(window, latest=latest)
+    return None
 
 
 def _fallback_prediction(readings, horizon_minutes=30):
@@ -288,22 +442,26 @@ def _fallback_prediction(readings, horizon_minutes=30):
     pressure = 1013.25 + (50 - humidity) * 0.025 - (temperature - 22) * 0.18
     rainfall = max(0, rain_level * 0.42)
 
-    return np.array([
+    return [
         max_temperature,
         min_temperature,
         apparent_temperature,
         humidity,
         pressure,
         rainfall,
-    ])
+    ]
 
 
 def predict_weather(readings, project=None, horizon_minutes=30):
-    window = _feature_window(readings, project)
-    prediction = _model_prediction(window)
+    readings_list = list(readings or [])
+    latest = readings_list[0] if readings_list else None
+    prediction = None
+    if MODEL_ENABLED:
+        window = _feature_window(readings_list, project)
+        prediction = _model_prediction(window, latest=latest)
     used_model = prediction is not None
     if prediction is None:
-        prediction = _fallback_prediction(readings, horizon_minutes)
+        prediction = _fallback_prediction(readings_list, horizon_minutes)
 
     payload = {
         WEATHER_FIELDS[index]: _round(prediction[index])
@@ -320,10 +478,15 @@ def predict_weather(readings, project=None, horizon_minutes=30):
         "source": "transformer" if used_model else "fallback",
         "model_status": f"{model_status()}+calibrated" if offsets else model_status(),
         "model_available": used_model,
+        "transformer_requested": MODEL_ENABLED,
+        "transformer_model_file": MODEL_FILE,
+        "transformer_model_file_exists": os.path.exists(MODEL_FILE),
+        "transformer_scaler_file_exists": os.path.exists(SCALER_FILE),
         "confidence": min(97.0, (86.0 if used_model else 62.0) + (4.0 if offsets else 0.0)),
         "horizon_minutes": horizon_minutes,
         "forecast_for": (datetime.utcnow() + timedelta(minutes=horizon_minutes)).isoformat(),
         "calibration": calibration if offsets else {},
+        "input_samples": len(readings_list),
     })
     return payload
 
@@ -401,6 +564,8 @@ def chatgpt_crop_advice(weather_payload, three_month_summary, project=None, plan
     }
 
     try:
+        import requests
+
         response = requests.post(
             "https://api.openai.com/v1/responses",
             headers={
@@ -442,7 +607,10 @@ def chatgpt_crop_advice(weather_payload, three_month_summary, project=None, plan
 
 def evaluate_weather_training(records):
     predicted = [record for record in records if getattr(record, "source", None) == "predicted"]
-    realtime = [record for record in records if getattr(record, "source", None) == "realtime"]
+    realtime = [
+        record for record in records
+        if getattr(record, "source", None) in {"realtime", "geo_realtime", "geo_daily"}
+    ]
 
     if len(predicted) < 2 or len(realtime) < 2:
         return {
@@ -451,19 +619,20 @@ def evaluate_weather_training(records):
             "accuracy_score": None,
             "mean_absolute_error": None,
             "details": {
-                "message": "Need both predicted and realtime weather history to calibrate the Transformer model.",
+                "message": "Need both predicted and actual weather history from ESP32 realtime or geolocation daily weather to calibrate the Transformer model.",
                 "model_status": model_status(),
             },
         }
 
     pairs = []
     for actual in realtime:
+        actual_time = actual.forecast_for or actual.created_at
         candidates = [
             item for item in predicted
-            if item.forecast_for and actual.created_at and abs((item.forecast_for - actual.created_at).total_seconds()) <= 7200
+            if item.forecast_for and actual_time and abs((item.forecast_for - actual_time).total_seconds()) <= 36 * 3600
         ]
         if candidates:
-            pairs.append((actual, sorted(candidates, key=lambda item: abs((item.forecast_for - actual.created_at).total_seconds()))[0]))
+            pairs.append((actual, sorted(candidates, key=lambda item: abs((item.forecast_for - actual_time).total_seconds()))[0]))
 
     if not pairs:
         pairs = list(zip(realtime[:20], predicted[:20]))
@@ -526,3 +695,21 @@ def evaluate_weather_training(records):
             "per_field_mae": per_field_mae,
         },
     }
+
+
+def _cli_predict_json():
+    raw = sys.stdin.read()
+    data = json.loads(raw or "{}")
+    np = _np()
+    prediction = _model_prediction_inprocess(
+        np.array(data.get("window") or [], dtype=float),
+        latest=data.get("latest"),
+    )
+    print(json.dumps({
+        "prediction": prediction.tolist() if prediction is not None else None,
+        "error": _MODEL_ERROR,
+    }))
+
+
+if __name__ == "__main__" and "--predict-json" in sys.argv:
+    _cli_predict_json()

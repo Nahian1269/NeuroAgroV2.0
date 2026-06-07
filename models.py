@@ -305,6 +305,8 @@ class DiseaseDetection(db.Model):
         return {
             'id': self.id,
             'image_url': self.image_url,
+            'annotated_image_url': self.image_url,
+            'is_from_camera': self.is_from_camera,
             'primary_disease': self.primary_disease,
             'disease_confidence': self.disease_confidence,
             'detections': detections_data,

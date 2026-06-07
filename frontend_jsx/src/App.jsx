@@ -155,6 +155,7 @@ function initialPageFromPath() {
   if (path.startsWith('/profile')) return 'profile';
   if (path.startsWith('/chat')) return 'chat';
   if (path.startsWith('/community')) return 'community';
+  if (path.startsWith('/manual')) return 'manual';
   if (path.startsWith('/projects') || path.startsWith('/setup')) return 'projects';
   if (path.startsWith('/dashboard')) return 'dashboard';
   if (path.startsWith('/login') || path.startsWith('/register')) return 'auth';
@@ -195,12 +196,14 @@ export default function App() {
   const [adminThread, setAdminThread] = useState(null);
   const [adminChatText, setAdminChatText] = useState('');
   const [supabaseStatus, setSupabaseStatus] = useState({ configured: SUPABASE_CONFIGURED, ok: false });
+  const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
 
   const latest = readings[0];
   const health = useMemo(() => getHealth(latest, status), [latest, status]);
   const projectAdvice = useMemo(() => analyzeProject(project || projectForm), [project, projectForm]);
   const hardware = useMemo(() => buildHardware(latest, status), [latest, status]);
+  const searchOptions = useMemo(() => buildSearchOptions(user), [user]);
 
   function openAuth(mode) {
     setAuthMode(mode);
@@ -229,6 +232,16 @@ export default function App() {
   function apiTarget(path) {
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
     return `${API_BASE || origin}${path}`;
+  }
+
+  function goToSearchItem(item) {
+    if (!item) return;
+    if (item.requiresAuth && !user) {
+      openAuth('login');
+      return;
+    }
+    setPage(item.page);
+    setSearchTerm('');
   }
 
   async function loadSupabaseStatus() {
@@ -597,6 +610,16 @@ export default function App() {
     }
   }
 
+  async function syncGeoWeather(force = false) {
+    setLoading(true);
+    try {
+      const response = await apiFetch(`/api/weather/geo/${deviceId}${force ? '?force=1' : ''}`, { method: 'POST' });
+      if (response.ok) await loadWeather(deviceId);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function runWeatherTick() {
     try {
       const response = await apiFetch(`/api/weather/tick/${deviceId}`, { method: 'POST' });
@@ -639,6 +662,26 @@ export default function App() {
       body: JSON.stringify(updates)
     });
     await refresh(deviceId, true);
+  }
+
+  async function seedVirtualFarm() {
+    if (!user) {
+      openAuth('login');
+      return;
+    }
+    setLoading(true);
+    try {
+      const response = await apiFetch(`/api/demo/seed/${deviceId}`, { method: 'POST' });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.device?.device_id) setDeviceId(data.device.device_id);
+        pushLatestPrediction(data.weather_prediction);
+        await refresh(data.device?.device_id || deviceId, true);
+        setPage('dashboard');
+      }
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function submitDiseaseImage(event) {
@@ -833,9 +876,16 @@ export default function App() {
           <NavButton icon={<Microscope />} active={page === 'disease'} title="Disease" onClick={() => user ? setPage('disease') : openAuth('login')} />
           <NavButton icon={<MessageCircle />} active={page === 'chat'} title="Chat" onClick={() => user ? setPage('chat') : openAuth('login')} />
           <NavButton icon={<BookOpen />} active={page === 'community'} title="Community" onClick={() => user ? setPage('community') : openAuth('login')} />
+          <NavButton icon={<BookOpen />} active={page === 'manual'} title="Manual" onClick={() => setPage('manual')} />
           <NavButton icon={<User />} active={page === 'profile'} title="Profile" onClick={() => user ? setPage('profile') : openAuth('login')} />
           <NavButton icon={<ShieldCheck />} active={page === 'admin'} title="Admin" onClick={() => setPage('admin')} />
         </nav>
+        <GlobalSearch
+          value={searchTerm}
+          setValue={setSearchTerm}
+          options={searchOptions}
+          onSelect={goToSearchItem}
+        />
         <div className="auth-actions">
           {user ? (
             <>
@@ -908,11 +958,14 @@ export default function App() {
           notifications={notifications}
           analysis={analysis}
           weatherData={weatherData}
+          diseaseHistory={diseaseHistory}
           runSensorAnalysis={runSensorAnalysis}
           runWeatherPrediction={runWeatherPrediction}
+          syncGeoWeather={syncGeoWeather}
           trainWeatherModel={trainWeatherModel}
           sendCommand={sendCommand}
           updateDeviceStatus={updateDeviceStatus}
+          seedVirtualFarm={seedVirtualFarm}
           loading={loading}
           setPage={setPage}
         />
@@ -957,6 +1010,15 @@ export default function App() {
           onRefresh={loadCommunity}
         />
       )}
+      {page === 'manual' && (
+        <ManualPage
+          user={user}
+          setPage={setPage}
+          openAuth={openAuth}
+          seedVirtualFarm={seedVirtualFarm}
+          loading={loading}
+        />
+      )}
       {page === 'disease' && user && (
         <DiseasePage
           result={diseaseResult}
@@ -987,6 +1049,7 @@ export default function App() {
           onAdminChatSubmit={sendAdminChat}
         />
       )}
+      <AppFooter setPage={setPage} user={user} />
     </main>
   );
 }
@@ -996,6 +1059,145 @@ function NavButton({ icon, active, title, onClick }) {
     <button className={active ? 'active' : ''} onClick={onClick} title={title} aria-label={title}>
       {icon}
     </button>
+  );
+}
+
+function GlobalSearch({ value, setValue, options, onSelect }) {
+  const normalized = value.trim().toLowerCase();
+  const visibleOptions = normalized
+    ? options.filter((item) => item.keywords.includes(normalized) || item.label.toLowerCase().includes(normalized)).slice(0, 6)
+    : options.slice(0, 6);
+
+  function submit(event) {
+    event.preventDefault();
+    if (!normalized) return;
+    const match = options.find((item) => item.label.toLowerCase() === normalized)
+      || options.find((item) => item.keywords.includes(normalized) || item.label.toLowerCase().includes(normalized));
+    onSelect(match);
+  }
+
+  return (
+    <form className="global-search" onSubmit={submit}>
+      <Search size={16} />
+      <input
+        value={value}
+        list="nuroagro-search-options"
+        placeholder="Search"
+        onChange={(event) => setValue(event.target.value)}
+        aria-label="Search pages"
+      />
+      <datalist id="nuroagro-search-options">
+        {visibleOptions.map((item) => <option key={item.label} value={item.label} />)}
+      </datalist>
+    </form>
+  );
+}
+
+function ManualPage({ user, setPage, openAuth, seedVirtualFarm, loading }) {
+  const pinRows = [
+    ['DHT11', 'GPIO 4', '3.3V, GND'],
+    ['Soil moisture', 'GPIO 34 ADC1', '3.3V analog, GND'],
+    ['MQ-5', 'GPIO 35 ADC1', '5V sensor board, shared GND'],
+    ['MQ-7', 'GPIO 32 ADC1', '5V sensor board, shared GND'],
+    ['MQ-135', 'GPIO 33 ADC1', '5V sensor board, shared GND'],
+    ['Raindrop analog', 'GPIO 39 ADC1', '3.3V/5V module, GND'],
+    ['PIR motion', 'GPIO 23', '3.3V/5V module, GND'],
+    ['Relay pump A', 'GPIO 12', 'External pump supply'],
+    ['Optional relay pump B', 'GPIO 14', 'External pump supply'],
+    ['Optional relay UV/light', 'GPIO 13', 'External light supply']
+  ];
+
+  return (
+    <>
+      <section className="manual-hero">
+        <div>
+          <p className="eyebrow">Product manual</p>
+          <h2>NuroAgro Setup Guide</h2>
+          <p>Run the platform with ESP32 hardware, without hardware in Virtual Farm Mode, locally, or on Render.</p>
+        </div>
+        <div className="manual-actions">
+          <button className="primary-button" onClick={() => user ? setPage('dashboard') : openAuth('register')}>
+            <Gauge size={18} /> {user ? 'Open Dashboard' : 'Create Account'}
+          </button>
+          <button className="secondary-button" onClick={seedVirtualFarm} disabled={!user || loading}>
+            <Cpu size={18} /> Virtual Farm Mode
+          </button>
+        </div>
+      </section>
+
+      <section className="manual-grid">
+        <article className="panel manual-card">
+          <div className="panel-title"><h3>Quick Start</h3><Sprout size={18} /></div>
+          <p>Login with the demo account or create an accepted user from Admin, save a project, then open Dashboard.</p>
+          <p>Use Virtual Farm Mode when ESP32 hardware is not connected. It stores real database rows so weather, history, alerts, and recommendations stay active.</p>
+        </article>
+        <article className="panel manual-card">
+          <div className="panel-title"><h3>Disease Detection</h3><Microscope size={18} /></div>
+          <p>Upload a sharp leaf photo from the Disease page. The app warms YOLO after startup and analyzes resized images for faster scans.</p>
+          <p>Use close-up images with good light when confidence is low, then compare the annotated result and saved history.</p>
+        </article>
+        <article className="panel manual-card">
+          <div className="panel-title"><h3>Weather Transformer</h3><CloudSun size={18} /></div>
+          <p>Weather prediction uses the Transformer model when `weather_prediction_transformer_model.keras` and `scaler.pkl` are available.</p>
+          <p>If the model is unavailable, the app keeps running with the local calibrated fallback and records the model status.</p>
+        </article>
+        <article className="panel manual-card">
+          <div className="panel-title"><h3>Deployment</h3><Globe2 size={18} /></div>
+          <p>Render is the preferred single-service deployment because Flask serves both the API and the built React app.</p>
+          <p>Vercel can host the frontend separately, but the Python backend and ML models should stay on Render or another Python service.</p>
+        </article>
+      </section>
+
+      <section className="table-panel">
+        <div className="panel-title"><h3>ESP32 Pin Diagram</h3><Cpu size={18} /></div>
+        <div className="pin-diagram">
+          <div className="esp-board">
+            <span>ESP-WROOM-32</span>
+            <i>USB</i>
+          </div>
+          <div className="pin-lines">
+            {pinRows.map(([module, pin]) => <span key={module}><b>{pin}</b>{module}</span>)}
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Module</th><th>ESP32 Pin</th><th>Power</th></tr></thead>
+            <tbody>
+              {pinRows.map(([module, pin, power]) => <tr key={module}><td>{module}</td><td>{pin}</td><td>{power}</td></tr>)}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="manual-grid">
+        <article className="panel manual-card">
+          <div className="panel-title"><h3>Local Run</h3><Settings size={18} /></div>
+          <p>Install Python and Node dependencies, run the final dev script, then open the Flask URL shown in the terminal.</p>
+          <p>Keep `DEVICE_API_KEY` the same in `.env` and ESP32 code.</p>
+        </article>
+        <article className="panel manual-card">
+          <div className="panel-title"><h3>Render Run</h3><ShieldCheck size={18} /></div>
+          <p>Use `render.yaml`, set `SECRET_KEY`, `DEVICE_API_KEY`, and `ADMIN_PASSWORD`, then deploy the repository.</p>
+          <p>Use a paid plan for smoother TensorFlow and YOLO cold starts.</p>
+        </article>
+      </section>
+    </>
+  );
+}
+
+function AppFooter({ setPage, user }) {
+  return (
+    <footer className="app-footer">
+      <div>
+        <strong>NuroAgro</strong>
+        <span>Production-ready smart farming dashboard</span>
+      </div>
+      <nav aria-label="Footer">
+        <button onClick={() => setPage(user ? 'dashboard' : 'home')}>Console</button>
+        <button onClick={() => setPage('manual')}>Manual</button>
+        <button onClick={() => setPage('admin')}>Admin</button>
+      </nav>
+    </footer>
   );
 }
 
@@ -1128,7 +1330,7 @@ function DashboardPage(props) {
   const {
     user, project, advice, deviceId, setDeviceId, latest, readings, status, health, hardware,
     recommendations, notifications, analysis, weatherData, runSensorAnalysis, runWeatherPrediction,
-    trainWeatherModel, sendCommand, updateDeviceStatus, loading, setPage
+    syncGeoWeather, trainWeatherModel, sendCommand, updateDeviceStatus, seedVirtualFarm, loading, setPage
   } = props;
 
   const devices = user.devices || [];
@@ -1150,6 +1352,7 @@ function DashboardPage(props) {
             </select>
           </label>
           <button className="primary-button" onClick={runSensorAnalysis}><Activity size={18} /> {loading ? 'Analyzing' : 'Analyze Sensors'}</button>
+          <button className="secondary-button" onClick={seedVirtualFarm} disabled={loading}><Cpu size={18} /> Virtual Farm</button>
         </div>
       </section>
 
@@ -1160,6 +1363,9 @@ function DashboardPage(props) {
           <p>{health.detail}</p>
         </div>
       </section>
+
+      <FeatureCoverage latest={latest} weatherData={weatherData} diseaseHistory={props.diseaseHistory || []} recommendations={recommendations} />
+      <CropGuardPanel latest={latest} weatherData={weatherData} diseaseHistory={props.diseaseHistory || []} />
 
       <section className="metric-grid">
         <Metric icon={<Thermometer />} label="Temperature" value={`${format(latest?.temperature)} C`} tone={toneFor(latest?.temperature, 18, 34)} />
@@ -1181,6 +1387,7 @@ function DashboardPage(props) {
         weatherData={weatherData}
         loading={loading}
         onPredict={runWeatherPrediction}
+        onGeoWeather={syncGeoWeather}
         onTrain={trainWeatherModel}
       />
 
@@ -1213,9 +1420,81 @@ function DashboardPage(props) {
         <button onClick={() => setPage('disease')}><Camera size={18} /> Disease Detection</button>
         <button onClick={() => setPage('chat')}><MessageCircle size={18} /> Chat Admin</button>
         <button onClick={() => setPage('community')}><BookOpen size={18} /> Community</button>
+        <button onClick={() => setPage('manual')}><BookOpen size={18} /> Manual</button>
         <button onClick={() => setPage('profile')}><User size={18} /> Profile</button>
       </section>
     </>
+  );
+}
+
+function FeatureCoverage({ latest, weatherData, diseaseHistory, recommendations }) {
+  const prediction = weatherData?.latest_prediction;
+  const featureItems = [
+    { icon: <Cpu />, label: 'ESP32 telemetry', ready: Boolean(latest), detail: latest ? timeAgo(latest.timestamp) : 'waiting' },
+    { icon: <CloudSun />, label: 'Weather AI', ready: Boolean(prediction), detail: prediction?.model_status || 'no prediction' },
+    { icon: <Microscope />, label: 'Disease vision', ready: Boolean((diseaseHistory || []).length), detail: `${(diseaseHistory || []).length} scans` },
+    { icon: <Activity />, label: 'Recommendations', ready: Boolean((recommendations || []).length), detail: `${(recommendations || []).length} active` },
+    { icon: <ShieldCheck />, label: 'Render-ready backend', ready: true, detail: 'Flask + React' }
+  ];
+
+  return (
+    <section className="feature-strip">
+      {featureItems.map((item) => (
+        <article className={`feature-chip ${item.ready ? 'ready' : 'waiting'}`} key={item.label}>
+          {item.icon}
+          <div>
+            <strong>{item.label}</strong>
+            <span>{item.detail}</span>
+          </div>
+        </article>
+      ))}
+    </section>
+  );
+}
+
+function CropGuardPanel({ latest, weatherData, diseaseHistory }) {
+  const prediction = weatherData?.latest_prediction || {};
+  const daily = weatherData?.daily_records || [];
+  const latestDaily = daily[0] || {};
+  const latestDisease = (diseaseHistory || [])[0] || {};
+  const factors = [];
+
+  function add(condition, points, label, detail) {
+    if (condition) factors.push({ points, label, detail });
+  }
+
+  const rainfall = Math.max(Number(prediction.rainfall || 0), Number(latestDaily.rainfall || 0));
+  add(Number(latest?.soil_moisture || 0) < 30, 18, 'Low root moisture', 'Irrigation should be checked before stress rises.');
+  add(Number(latest?.soil_moisture || 0) > 82, 15, 'Saturated media', 'Pause watering and check drainage.');
+  add(Number(prediction.humidity || latest?.humidity || 0) > 78, 16, 'High humidity', 'Disease pressure increases when leaves stay wet.');
+  add(Number(prediction.max_temperature || latest?.temperature || 0) > 34, 18, 'Heat stress', 'Improve shade, airflow, or mist timing.');
+  add(rainfall > 18, 14, 'Rain/wetness risk', 'Outdoor watering should pause during wet periods.');
+  add(Number(latestDisease.disease_confidence || 0) >= 20, 22, 'Disease evidence', `${latestDisease.primary_disease || 'Leaf issue'} was detected recently.`);
+  add(Number(latest?.mq135 || 0) > 400, 12, 'Air quality warning', 'Ventilation or gas sensor calibration needs review.');
+
+  const score = clamp(factors.reduce((sum, item) => sum + item.points, 0), 0, 100);
+  const tone = score >= 70 ? 'danger' : score >= 38 ? 'warn' : 'good';
+  const label = score >= 70 ? 'High crop risk' : score >= 38 ? 'Moderate crop risk' : 'Low crop risk';
+  const action = factors[0]?.detail || 'Conditions are stable. Keep collecting sensor, geo weather, and disease history.';
+
+  return (
+    <section className={`cropguard-panel ${tone}`}>
+      <div>
+        <p className="eyebrow">Unique feature</p>
+        <h3>CropGuard Risk Index</h3>
+        <p>{action}</p>
+      </div>
+      <div className="risk-meter" aria-label="CropGuard risk score">
+        <strong>{Math.round(score)}</strong>
+        <span>{label}</span>
+        <i style={{ width: `${score}%` }} />
+      </div>
+      <div className="risk-factors">
+        {(factors.length ? factors.slice(0, 3) : [{ label: 'Stable climate', detail: 'No major risk factor found.' }]).map((item) => (
+          <span key={item.label}><b>{item.label}</b>{item.detail}</span>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -1491,6 +1770,8 @@ function DiseasePage({ result, history, loading, onSubmit, onCameraScan, deviceI
   const imageUrl = result?.image_url || result?.annotated_image_url;
   const confidence = result?.confidence ?? result?.disease_confidence;
   const recommendations = Array.isArray(result?.recommendations) ? result.recommendations : [];
+  const discarded = result?.discarded_low_confidence || 0;
+  const threshold = result?.confidence_threshold;
 
   return (
     <>
@@ -1515,6 +1796,11 @@ function DiseasePage({ result, history, loading, onSubmit, onCameraScan, deviceI
             <span>{deviceId}</span>
             <span>ESP camera module automatic upload</span>
           </div>
+          <div className="quality-list">
+            <span>Use a sharp close-up leaf image</span>
+            <span>Fill most of the frame with the affected area</span>
+            <span>Avoid blur, shadow, and mixed backgrounds</span>
+          </div>
           <label className="upload-box">
             <Upload size={30} />
             <span>Select plant image</span>
@@ -1529,16 +1815,17 @@ function DiseasePage({ result, history, loading, onSubmit, onCameraScan, deviceI
           </div>
           {!result && (
             <div className="sample-image">
-              <img src={`${API_BASE}/static/uploads/rice-disease.jpg`} alt="Leaf disease sample" />
+              <img src={assetUrl('/uploads/rice-disease.jpg')} alt="Leaf disease sample" />
             </div>
           )}
           {result?.error && <p className="form-error">{result.error}</p>}
           {result && !result.error && (
             <div className="diagnosis">
-              {imageUrl && <img src={`${API_BASE}${imageUrl}`} alt="Disease detection result" />}
+              {imageUrl && <img src={assetUrl(imageUrl)} alt="Disease detection result" />}
               <strong>{result.primary_disease || 'No disease detected'}</strong>
               <span>{format(confidence)}% confidence</span>
               <p>Severity: {result.severity || result.severity_level || 'Not classified'}</p>
+              {threshold && <p className="muted">Disease confidence threshold: {format(threshold)}%. {discarded ? `${discarded} low-confidence marks ignored.` : 'No low-confidence disease marks ignored.'}</p>}
               {recommendations.map((item, index) => <p key={index} className="rec-item">{item}</p>)}
             </div>
           )}
@@ -1785,12 +2072,17 @@ function RangeControl({ icon, label, value, min, max, unit, onChange }) {
   );
 }
 
-function WeatherPanel({ weatherData, loading, onPredict, onTrain }) {
+function WeatherPanel({ weatherData, loading, onPredict, onGeoWeather, onTrain }) {
   const prediction = weatherData?.latest_prediction;
   const realtime = weatherData?.latest_realtime;
+  const geoDaily = weatherData?.daily_records || [];
+  const latestGeoDaily = weatherData?.latest_geo_daily || geoDaily[0];
   const training = weatherData?.latest_training_run;
   const records = weatherData?.records || [];
   const plants = Array.isArray(prediction?.recommended_plants) ? prediction.recommended_plants : [];
+  const rawPrediction = prediction?.raw_payload || {};
+  const modelSource = rawPrediction.source || prediction?.source || 'waiting';
+  const sampleCount = rawPrediction.input_samples;
 
   return (
     <section className="panel weather-panel">
@@ -1802,9 +2094,19 @@ function WeatherPanel({ weatherData, loading, onPredict, onTrain }) {
         <button className="primary-button small" onClick={() => onPredict(false)} disabled={loading}>
           <RefreshCcw size={16} /> Predict 30 Min
         </button>
+        <button className="secondary-button small" onClick={() => onGeoWeather(true)} disabled={loading}>
+          <Globe2 size={16} /> Sync Location Weather
+        </button>
         <button className="secondary-button small" onClick={onTrain} disabled={loading}>
           <LineChart size={16} /> Train 3-Month Model
         </button>
+      </div>
+
+      <div className="model-status-row">
+        <span className={`pill ${modelSource === 'transformer' ? 'good' : 'aqua'}`}>{title(modelSource)}</span>
+        <span>{prediction?.model_status || 'No weather model run yet'}</span>
+        <span>{sampleCount === undefined ? 'Waiting for sensor samples' : `${sampleCount} sensor samples used`}</span>
+        {rawPrediction.transformer_model_file_exists === false && <span>Transformer file missing</span>}
       </div>
 
       <div className="weather-grid">
@@ -1825,13 +2127,30 @@ function WeatherPanel({ weatherData, loading, onPredict, onTrain }) {
         <article className="insight-box">
           <span>Realtime weather packet</span>
           <strong>{realtime ? `${format(realtime.apparent_temperature)} C apparent` : 'No realtime weather stored'}</strong>
-          <p>{realtime ? `Stored ${timeAgo(realtime.created_at)} from ESP32 sensor payload.` : 'Realtime values are saved when ESP32 sends temperature, humidity, pressure, or rain fields.'}</p>
+          <p>{realtime ? `Stored ${timeAgo(realtime.created_at)} from ${title(realtime.source || 'weather')}.` : 'Realtime values are saved from ESP32 or geolocation weather sync.'}</p>
+        </article>
+        <article className="insight-box">
+          <span>Geo daily weather</span>
+          <strong>{latestGeoDaily ? `${format(latestGeoDaily.max_temperature)} / ${format(latestGeoDaily.min_temperature)} C` : 'No location forecast'}</strong>
+          <p>{latestGeoDaily ? `${title(latestGeoDaily.source)} saved for ${dateText(latestGeoDaily.forecast_for)}.` : 'Add project latitude/longitude, then sync location weather.'}</p>
         </article>
         <article className="insight-box">
           <span>Transformer calibration</span>
           <strong>{training ? title(training.status) : 'Not trained yet'}</strong>
           <p>{training ? `${training.samples_count || 0} paired samples, ${format(training.accuracy_score)}% score, MAE ${format(training.mean_absolute_error)}.` : 'Press Train 3-Month Model after enough realtime and predicted weather history is stored.'}</p>
         </article>
+      </div>
+
+      <div className="daily-weather-strip">
+        {geoDaily.slice(0, 7).map((item) => (
+          <article key={`daily-${item.id || item.forecast_for}`}>
+            <span>{item.forecast_for ? new Date(item.forecast_for).toLocaleDateString(undefined, { weekday: 'short' }) : 'Day'}</span>
+            <strong>{format(item.max_temperature)} C</strong>
+            <small>{format(item.min_temperature)} C min</small>
+            <small>{format(item.rainfall)} mm rain</small>
+          </article>
+        ))}
+        {!geoDaily.length && <p className="muted">No geolocation daily weather saved yet.</p>}
       </div>
 
       <div className="table-wrap weather-history">
@@ -1874,7 +2193,7 @@ function DiseaseHistoryPanel({ history }) {
       <div className="disease-history-grid">
         {(history || []).map((scan) => (
           <article className="scan-row" key={scan.id}>
-            {scan.image_url && <img src={`${API_BASE}${scan.image_url}`} alt="Stored disease scan" />}
+            {scan.image_url && <img src={assetUrl(scan.image_url)} alt="Stored disease scan" />}
             <div>
               <span className={`pill ${scan.is_from_camera ? 'aqua' : 'good'}`}>{scan.is_from_camera ? 'ESP camera' : 'Manual'}</span>
               <strong>{scan.primary_disease || 'No disease detected'}</strong>
@@ -2083,6 +2402,24 @@ function AdminGraph({ totals }) {
   );
 }
 
+function buildSearchOptions(user) {
+  const auth = Boolean(user);
+  return [
+    { label: 'Home Console', page: 'home', requiresAuth: false, keywords: 'home console product landing nuroagro' },
+    { label: 'Project Setup', page: 'projects', requiresAuth: true, keywords: 'project setup farm location geolocation crop fish system' },
+    { label: 'Dashboard', page: 'dashboard', requiresAuth: true, keywords: 'dashboard live sensors virtual farm iot esp32 controller telemetry' },
+    { label: 'Virtual Farm Mode', page: auth ? 'dashboard' : 'auth', requiresAuth: true, keywords: 'virtual farm no iot demo simulator sample data seed' },
+    { label: 'Weather Prediction', page: 'dashboard', requiresAuth: true, keywords: 'weather prediction transformer forecast train calibration rainfall humidity' },
+    { label: 'History Records', page: 'history', requiresAuth: true, keywords: 'history records sensor weather disease recommendation notifications training' },
+    { label: 'Disease Detection', page: 'disease', requiresAuth: true, keywords: 'disease detection yolo leaf crop image upload camera' },
+    { label: 'Admin Chat', page: 'chat', requiresAuth: true, keywords: 'chat support admin message help' },
+    { label: 'Community Forum', page: 'community', requiresAuth: true, keywords: 'community forum posts replies growers disease hydroponic' },
+    { label: 'Profile', page: 'profile', requiresAuth: true, keywords: 'profile user farm phone location plant account' },
+    { label: 'Manual And Wiring', page: 'manual', requiresAuth: false, keywords: 'manual guide wiring pin diagram esp32 render vercel deploy local instructions' },
+    { label: 'Admin Panel', page: 'admin', requiresAuth: false, keywords: 'admin users approval visitors database system' }
+  ];
+}
+
 function analyzeProject(project) {
   if (!project?.name) {
     return {
@@ -2138,7 +2475,7 @@ function buildHardware(latest, status) {
     { icon: <Wind />, label: 'MQ-05', value: format(latest?.mq5), tone: Number(latest?.mq5 || 0) > 350 ? 'warn' : 'good' },
     { icon: <Wind />, label: 'MQ-07', value: format(latest?.mq7), tone: Number(latest?.mq7 || 0) > 280 ? 'warn' : 'good' },
     { icon: <Wind />, label: 'MQ-135', value: format(latest?.mq135), tone: Number(latest?.mq135 || 0) > 400 ? 'warn' : 'good' },
-    { icon: <Thermometer />, label: 'DHT11 / DHT7', value: `${format(latest?.temperature)} C`, tone: toneFor(latest?.temperature, 18, 34) },
+    { icon: <Thermometer />, label: 'DHT11', value: `${format(latest?.temperature)} C`, tone: toneFor(latest?.temperature, 18, 34) },
     { icon: <Lightbulb />, label: 'TEMT6000', value: format(latest?.light_intensity), tone: toneFor(latest?.light_intensity, 250, 1600) },
     { icon: <CloudSun />, label: 'Raindrop', value: format(latest?.rain_level), tone: Number(latest?.rain_level || 0) > 60 ? 'warn' : 'good' },
     { icon: <Droplets />, label: 'Soil Moisture', value: `${format(latest?.soil_moisture)}%`, tone: toneFor(latest?.soil_moisture, 30, 82) },
@@ -2202,6 +2539,16 @@ function loadProject() {
 function format(value) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return '--';
   return Number(value).toFixed(1);
+}
+
+function assetUrl(value) {
+  if (!value) return '';
+  const text = String(value).replaceAll('\\', '/');
+  if (text.startsWith('http://') || text.startsWith('https://')) return text;
+  const normalized = text.startsWith('/static/uploads/')
+    ? text.replace('/static/uploads/', '/uploads/')
+    : text;
+  return `${API_BASE}${normalized.startsWith('/') ? normalized : `/${normalized}`}`;
 }
 
 function title(value) {

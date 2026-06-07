@@ -1,4 +1,5 @@
 import { execFileSync, spawn } from 'node:child_process';
+import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
@@ -23,9 +24,11 @@ function setPort(nextPort) {
 setPort(port);
 
 function pythonPath() {
-  return process.platform === 'win32'
+  const venvPython = process.platform === 'win32'
     ? path.join(root, '.venv', 'Scripts', 'python.exe')
     : path.join(root, '.venv', 'bin', 'python');
+  if (fs.existsSync(venvPython)) return venvPython;
+  return process.platform === 'win32' ? 'python' : 'python3';
 }
 
 function stopOldNuroAgroBackends() {
@@ -82,7 +85,7 @@ function requestStatus(url) {
 }
 
 async function waitForApp() {
-  for (let attempt = 0; attempt < 30; attempt += 1) {
+  for (let attempt = 0; attempt < 75; attempt += 1) {
     if ((await requestStatus(healthUrl)) === 200) return true;
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
@@ -122,7 +125,12 @@ async function startBackend(targetPort) {
   console.log(`Starting NuroAgro at ${appUrl}...`);
   backend = spawn(pythonPath(), ['run_iot.py'], {
     cwd: root,
-    env: { ...process.env, IOT_APP_PORT: String(port) },
+    env: {
+      ...process.env,
+      IOT_APP_PORT: String(port),
+      DISEASE_MODEL_PRELOAD: process.env.DISEASE_MODEL_PRELOAD || 'false',
+      WEATHER_TRANSFORMER_TIMEOUT_SECONDS: process.env.WEATHER_TRANSFORMER_TIMEOUT_SECONDS || '8',
+    },
     stdio: 'inherit',
   });
 

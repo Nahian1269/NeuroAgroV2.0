@@ -9,7 +9,7 @@
  * - Remote device control
  * 
  * Hardware: ESP32-WROOM-32
- * Sensors: DHT11/DHT7, Soil Moisture, MQ-2/5/7/135, TEMT6000,
+ * Sensors: DHT11, Soil Moisture, MQ-2/5/7/135, TEMT6000,
  *          Raindrop, Water Level, PIR Motion, optional Sound
  * Actuators: 2x pumps, relay UV/grow light power, PWM UV dimming
  */
@@ -18,16 +18,24 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <DHT.h>
-#include <Wire.h>
-#include <Adafruit_ADS1X15.h>
 #include <time.h>
 
 // ==================== CONFIGURATION ====================
 
+// Set to 1 only if you add an ADS1115 module for extra analog sensors.
+// Your requested build (ESP32-WROOM-32, MQ7, MQ135, MQ5, DHT11, rain,
+// soil moisture, relay, PIR) does not need ADS1115.
+#define USE_ADS1115 0
+
+#if USE_ADS1115
+#include <Wire.h>
+#include <Adafruit_ADS1X15.h>
+#endif
+
 // WiFi Configuration
 const char* SSID = "YOUR_SSID";                    // Change to your WiFi name
 const char* PASSWORD = "YOUR_PASSWORD";             // Change to your WiFi password
-const char* SERVER_URL = "http://192.168.x.x:5001"; // Change to your server IP:port
+const char* SERVER_URL = "http://192.168.x.x:5001"; // Local: http://PC_IP:5001, Render: https://your-app.onrender.com
 const char* DEVICE_ID = "ESP32_001";
 const char* API_KEY = "farm-device-key";            // Must be sent as X-API-Key
 
@@ -38,12 +46,11 @@ const char* COMMAND_CHECK_ENDPOINT = "/api/device-command/";
 // Data transmission interval (milliseconds)
 #define SENSOR_READ_INTERVAL 10000  // Read sensors every 10 seconds
 #define DATA_SEND_INTERVAL 60000    // Send data every 60 seconds
-#define USE_ADS1115 true            // Required for the full NuroAgro analog sensor set
 
 // ==================== PIN DEFINITIONS ====================
 
 // Sensor Pins
-#define DHT_PIN 4             // GPIO 4 - DHT11/DHT7 data
+#define DHT_PIN 4             // GPIO 4 - DHT11 data
 #define SOIL_MOISTURE_PIN 34  // GPIO 34 - ADC1 input
 #define MQ5_PIN 35            // GPIO 35 - ADC1 input - LPG/Natural Gas
 #define MQ7_PIN 32            // GPIO 32 - ADC1 input - Carbon Monoxide
@@ -70,7 +77,9 @@ const char* COMMAND_CHECK_ENDPOINT = "/api/device-command/";
 
 DHT dht(DHT_PIN, DHT_TYPE);
 HTTPClient http;
+#if USE_ADS1115
 Adafruit_ADS1115 ads;
+#endif
 bool ads_ready = false;
 
 // Data structures
@@ -140,17 +149,19 @@ void setup() {
   dht.begin();
   Serial.println("[INIT] DHT11 sensor initialized");
 
+#if USE_ADS1115
   // Initialize ADS1115 for extra analog sensors
-  if (USE_ADS1115) {
-    Wire.begin(21, 22);
-    ads_ready = ads.begin(0x48);
-    if (ads_ready) {
-      ads.setGain(GAIN_ONE); // +/-4.096V range, good for 3.3V sensor outputs
-      Serial.println("[INIT] ADS1115 initialized at 0x48");
-    } else {
-      Serial.println("[WARN] ADS1115 not found. Water level, MQ-2, and sound will read 0.");
-    }
+  Wire.begin(21, 22);
+  ads_ready = ads.begin(0x48);
+  if (ads_ready) {
+    ads.setGain(GAIN_ONE); // +/-4.096V range, good for 3.3V sensor outputs
+    Serial.println("[INIT] ADS1115 initialized at 0x48");
+  } else {
+    Serial.println("[WARN] ADS1115 not found. Water level, MQ-2, and sound will read 0.");
   }
+#else
+  Serial.println("[INIT] ADS1115 disabled. Requested build uses ESP32 ADC1 pins only.");
+#endif
   
   // Connect to WiFi
   connectToWiFi();
@@ -253,7 +264,7 @@ void readDHT11() {
   
   Serial.print("[DHT11] Temp: ");
   Serial.print(temp);
-  Serial.print("°C, Humidity: ");
+  Serial.print(" C, Humidity: ");
   Serial.print(humid);
   Serial.println("%");
 }
@@ -379,18 +390,23 @@ void readMotionSensor() {
 }
 
 int readADSRaw(uint8_t channel) {
+#if USE_ADS1115
   if (!ads_ready) {
     return 0;
   }
   int16_t raw = ads.readADC_SingleEnded(channel);
   return max(0, (int)raw);
+#else
+  (void)channel;
+  return 0;
+#endif
 }
 
 void logSensorData() {
   Serial.println("\n[DATA SUMMARY]");
   Serial.print("  Temperature: ");
   Serial.print(current_sensor_data.temperature);
-  Serial.println(" °C");
+  Serial.println(" C");
   Serial.print("  Humidity: ");
   Serial.print(current_sensor_data.humidity);
   Serial.println(" %");
@@ -660,7 +676,7 @@ void printSystemStatus() {
  *    - HTTPClient.h (Built-in)
  *    - ArduinoJson.h (by Benoit Blanchon)
  *    - DHT.h (by Adafruit)
- *    - Adafruit ADS1X15 (for ADS1115)
+ *    - Adafruit ADS1X15 (only if USE_ADS1115 is set to 1)
  * 
  * 5. Troubleshooting:
  *    - Check Serial Monitor at 115200 baud

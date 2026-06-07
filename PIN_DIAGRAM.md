@@ -9,6 +9,57 @@ This hardware plan is for the current NuroAgro application:
 
 Use two ESP32 boards. A camera module consumes many pins and should not be wired to the same ESP32-WROOM that reads sensors and drives relays.
 
+## Requested Build: ESP32-WROOM-32 + Your Sensors
+
+Use this map when you have these parts only: ESP32-WROOM-32, MQ7, MQ135, MQ5, DHT11, raindrop sensor, soil moisture sensor, one relay module, and PIR sensor. This build does not require ADS1115.
+
+```text
+                              +----------------------+
+5V supply  ------------------>| ESP32 VIN/5V         |
+3.3V rail ------------------->| ESP32 3V3            |
+Common GND ------------------>| ESP32 GND            |
+                              |                      |
+DHT11 DATA ------------------>| GPIO4                |
+Soil moisture AO -----------> | GPIO34 ADC1          |
+MQ5 AO ---------------------> | GPIO35 ADC1          |
+MQ7 AO ---------------------> | GPIO32 ADC1          |
+MQ135 AO -------------------> | GPIO33 ADC1          |
+Raindrop AO ----------------> | GPIO39 ADC1          |
+PIR OUT --------------------> | GPIO23               |
+Relay IN -------------------> | GPIO12               |
+                              +----------------------+
+```
+
+| Module | VCC | GND | Signal to ESP32 | App field |
+|---|---|---|---:|---|
+| DHT11 | 3.3V or 5V module VCC | Common GND | GPIO4 DATA | `temperature`, `humidity` |
+| Soil moisture sensor | 3.3V preferred | Common GND | GPIO34 AO | `soil_moisture` |
+| MQ5 gas sensor | 5V heater/module VCC | Common GND | GPIO35 AO through divider if 5V | `mq5` |
+| MQ7 CO sensor | 5V heater/module VCC | Common GND | GPIO32 AO through divider if 5V | `mq7` |
+| MQ135 air sensor | 5V heater/module VCC | Common GND | GPIO33 AO through divider if 5V | `mq135` |
+| Raindrop sensor | 3.3V preferred | Common GND | GPIO39 AO | `rain_level` |
+| PIR sensor | 3.3V or 5V module VCC | Common GND | GPIO23 OUT | `motion_detected` |
+| Relay module | Relay-rated VCC | Common GND | GPIO12 IN | `pump_status` / pump control |
+
+Important: ESP32 ADC pins are not 5V tolerant. Many MQ modules output up to 5V on AO, so use a divider such as 10k from AO to ESP32 pin and 20k from ESP32 pin to GND, or use a level-shifting/3.3V-safe module output.
+
+For this requested build, upload `esp32_firmware/main.ino` with:
+
+```cpp
+#define USE_ADS1115 0
+```
+
+Then change these values near the top of the firmware:
+
+```cpp
+const char* SSID = "YOUR_WIFI_NAME";
+const char* PASSWORD = "YOUR_WIFI_PASSWORD";
+const char* SERVER_URL = "http://YOUR_PC_IP:5001"; // local
+// or: const char* SERVER_URL = "https://your-render-app.onrender.com";
+const char* DEVICE_ID = "ESP32_001";
+const char* API_KEY = "farm-device-key";
+```
+
 ## Why An ADC Expander Is Recommended
 
 The full NuroAgro sensor list has many analog outputs:
@@ -27,7 +78,7 @@ Recommended full build map:
 
 | Module | Signal | ESP32 Pin | Voltage/Interface | Notes |
 |---|---|---:|---|---|
-| DHT11 or DHT7 | DATA | GPIO 4 | Digital, 3.3V | Add 10k pull-up from DATA to 3.3V. |
+| DHT11 | DATA | GPIO 4 | Digital, 3.3V | Add 10k pull-up from DATA to 3.3V. |
 | Soil moisture | AO | GPIO 34 | ADC1 input | Input-only pin. Use 3.3V-safe analog output. |
 | MQ-5 | AO | GPIO 35 | ADC1 input | LPG/natural gas. Use voltage divider if AO can reach 5V. |
 | MQ-7 | AO | GPIO 32 | ADC1 input | Carbon monoxide. Needs warm-up/calibration. |

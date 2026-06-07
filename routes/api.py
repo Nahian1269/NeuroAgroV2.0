@@ -11,6 +11,8 @@ from models import (
 )
 from datetime import datetime, timedelta
 import json
+import os
+from pathlib import Path
 from functools import wraps
 from threading import Thread
 from time import perf_counter
@@ -28,7 +30,13 @@ from weather_agent import (
     summarize_weather,
 )
 
+try:
+    import requests
+except Exception:
+    requests = None
+
 api_bp = Blueprint('api', __name__, url_prefix='/api')
+ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif'}
 
 
 def mirror_disease_artifacts_async(app, detection_id, notification_id=None):
@@ -48,6 +56,25 @@ def mirror_disease_artifacts_async(app, detection_id, notification_id=None):
 
     Thread(target=worker, name=f'disease-mirror-{detection_id}', daemon=True).start()
 
+
+def mirror_weather_records_async(app, record_ids):
+    """Mirror weather rows without delaying prediction or geo sync responses."""
+    ids = [record_id for record_id in record_ids if record_id]
+    if not ids:
+        return
+
+    def worker():
+        with app.app_context():
+            for record_id in ids:
+                try:
+                    record = WeatherRecord.query.get(record_id)
+                    if record:
+                        mirror_weather_record(record)
+                except Exception as exc:
+                    app.logger.warning("Background weather mirror failed for %s: %s", record_id, exc)
+
+    Thread(target=worker, name=f'weather-mirror-{ids[0]}', daemon=True).start()
+
 # ==================== AUTHENTICATION DECORATOR ====================
 
 def request_data():
@@ -57,6 +84,60 @@ def request_data():
 
 def clean_text(value):
     return (value or '').strip()
+
+
+def allowed_image_file(filename):
+    return '.' in (filename or '') and filename.rsplit('.', 1)[1].lower() in ALLOWED_IMAGE_EXTENSIONS
+
+
+def upload_url_for_path(path):
+    try:
+        root = Path(current_app.config['UPLOAD_FOLDER']).resolve()
+        rel = Path(path).resolve().relative_to(root)
+        return f"/uploads/{rel.as_posix()}"
+    except Exception:
+        return None
+
+
+def public_image_url(value, fallback_path=None):
+    """Normalize old static paths and current upload paths to the served /uploads URL."""
+    for candidate in (value, fallback_path):
+        if not candidate:
+            continue
+        mapped = upload_url_for_path(candidate)
+        if mapped:
+            return mapped
+        text = str(candidate).replace('\\', '/')
+        if text.startswith(('http://', 'https://')):
+            return text
+        if text.startswith('/uploads/'):
+            return text
+        if text.startswith('/static/uploads/'):
+            return '/uploads/' + text[len('/static/uploads/'):]
+        if 'static/uploads/' in text:
+            return '/uploads/' + text.split('static/uploads/', 1)[1]
+        if 'disease_images/' in text:
+            return '/uploads/disease_images/' + text.split('disease_images/', 1)[1]
+    return None
+
+
+def disease_detection_payload(detection):
+    item = detection.to_dict()
+    item['image_url'] = public_image_url(detection.image_url, detection.image_path) or detection.image_url
+    item['annotated_image_url'] = item['image_url']
+    item['original_image_url'] = public_image_url(detection.image_path)
+    item['is_from_camera'] = detection.is_from_camera
+    return item
+
+
+def disease_upload_folder():
+    folder = Path(current_app.config['UPLOAD_FOLDER']) / 'disease_images'
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def disease_detected(name, confidence):
+    return bool(name) and str(name).strip().lower() not in {'healthy', 'background'} and (confidence or 0) >= 20
 
 
 def number_or_none(value):
@@ -464,7 +545,7 @@ def device_history(device_id):
         'device_id': device_id,
         'sensor_readings': [item.to_dict() for item in sensors],
         'weather_records': [item.to_dict() for item in weather],
-        'disease_detections': [item.to_dict() for item in diseases],
+        'disease_detections': [disease_detection_payload(item) for item in diseases],
         'recommendations': [item.to_dict() for item in recs],
         'notifications': [item.to_dict() for item in notes],
         'weather_training_runs': [item.to_dict() for item in trainings]
@@ -925,6 +1006,99 @@ def get_sensor_data(device_id):
         return jsonify({'error': str(e)}), 500
 
 
+@api_bp.route('/demo/seed/<device_id>', methods=['POST'])
+def seed_virtual_farm_data(device_id):
+    """Create a realistic local reading so the product works without IoT hardware."""
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'Login required'}), 401
+
+    try:
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+
+        device = Device.query.filter_by(device_id=device_id, user_id=user.id).first()
+        if not device:
+            device, status = create_user_device(user, device_id)
+        else:
+            status = DeviceStatus.query.filter_by(user_id=user.id, device_id=device.device_id).first()
+            if not status:
+                status = DeviceStatus(user_id=user.id, device_id=device.device_id)
+                db.session.add(status)
+                db.session.flush()
+
+        now = datetime.utcnow()
+        phase = (now.minute + now.second / 60) / 60
+        temperature = 25.5 + 3.2 * phase
+        humidity = 58 + 12 * (1 - phase)
+        soil_moisture = 38 + 18 * phase
+        light_intensity = 520 + 460 * phase
+        rain_level = 6 + 18 * max(0, 0.55 - phase)
+        water_level = 72 - 8 * phase
+
+        reading = SensorReading(
+            user_id=user.id,
+            device_id=device.device_id,
+            temperature=round(temperature, 2),
+            humidity=round(humidity, 2),
+            soil_moisture=round(soil_moisture, 2),
+            mq5_reading=round(125 + 25 * phase, 2),
+            mq7_reading=round(72 + 18 * phase, 2),
+            mq135_reading=round(245 + 35 * phase, 2),
+            light_intensity=round(light_intensity, 2),
+            rain_level=round(rain_level, 2),
+            water_level=round(water_level, 2),
+            motion_detected=phase > 0.72,
+            pump_status=soil_moisture < 42,
+            light_status=light_intensity < 650,
+            timestamp=now
+        )
+
+        status.pump_on = reading.pump_status
+        status.light_on = reading.light_status
+        status.uv_light_level = 62 if reading.light_status else 48
+        status.last_command = 'virtual_farm_sample'
+        status.last_command_time = now
+        if reading.pump_status:
+            status.last_watering = now
+        device.last_heartbeat = now
+
+        db.session.add(reading)
+        db.session.commit()
+
+        mirror_device(device)
+        mirror_sensor_reading(reading)
+        mirror_device_status(status)
+        check_sensor_thresholds(user, reading)
+        record_realtime_weather_from_sensor(user, device.device_id, reading, {
+            'pressure': 1012.8,
+            'rainfall': reading.rain_level
+        })
+        maybe_create_hourly_farm_analysis(user, device.device_id)
+        prediction = create_weather_prediction_record(user, device, force=True, notify=False)
+
+        create_notification(
+            user,
+            'Virtual Farm Mode added one demo reading. Connect ESP32 later with the same device ID.',
+            'virtual_farm'
+        )
+
+        return jsonify({
+            'status': 'success',
+            'mode': 'virtual_farm',
+            'device': device.to_dict(),
+            'reading': reading.to_dict(),
+            'device_status': status.to_dict(),
+            'weather_prediction': prediction.to_dict() if prediction else None
+        }), 201
+
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error seeding virtual farm data: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
 # ==================== DEVICE CONTROL ENDPOINTS ====================
 
 @api_bp.route('/device-command', methods=['POST'])
@@ -1150,11 +1324,19 @@ def get_weather_records(device_id):
         if not has_device_access(device):
             return jsonify({'error': 'Login or valid device API key required'}), 401
 
+        user = User.query.get(device.user_id)
+        if os.environ.get('WEATHER_GEO_AUTOSYNC', 'true').lower() not in {'0', 'false', 'no', 'off'}:
+            try:
+                create_geo_weather_records(user, device, force=False)
+            except Exception as exc:
+                current_app.logger.debug("Geo weather autosync skipped: %s", exc)
+
         limit = request.args.get('limit', 24, type=int)
         records = WeatherRecord.query.filter_by(user_id=device.user_id, device_id=device_id)\
             .order_by(WeatherRecord.created_at.desc()).limit(limit).all()
         latest_prediction = next((record for record in records if record.source == 'predicted'), None)
-        latest_realtime = next((record for record in records if record.source == 'realtime'), None)
+        latest_realtime = next((record for record in records if record.source in {'realtime', 'geo_realtime'}), None)
+        daily_records = [record for record in records if record.source == 'geo_daily']
         training = WeatherTrainingRun.query.filter_by(user_id=device.user_id, device_id=device_id)\
             .order_by(WeatherTrainingRun.started_at.desc()).first()
 
@@ -1163,6 +1345,8 @@ def get_weather_records(device_id):
             'records': [record.to_dict() for record in records],
             'latest_prediction': latest_prediction.to_dict() if latest_prediction else None,
             'latest_realtime': latest_realtime.to_dict() if latest_realtime else None,
+            'latest_geo_daily': daily_records[0].to_dict() if daily_records else None,
+            'daily_records': [record.to_dict() for record in daily_records[:7]],
             'latest_training_run': training.to_dict() if training else None,
             'latest_training': training.to_dict() if training else None,
         }), 200
@@ -1182,6 +1366,10 @@ def predict_device_weather(device_id):
             return jsonify({'error': 'Login or valid device API key required'}), 401
 
         user = User.query.get(device.user_id)
+        try:
+            create_geo_weather_records(user, device, force=False)
+        except Exception as exc:
+            current_app.logger.debug("Geo weather sync skipped before prediction: %s", exc)
         record = create_weather_prediction_record(user, device, force=True, notify=True)
         return jsonify({
             'status': 'success',
@@ -1190,6 +1378,30 @@ def predict_device_weather(device_id):
 
     except Exception as e:
         current_app.logger.error(f"Error in weather prediction: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@api_bp.route('/weather/geo/<device_id>', methods=['POST'])
+def sync_geo_weather(device_id):
+    """Fetch and save geolocation-wise current and daily weather."""
+    try:
+        device = Device.query.filter_by(device_id=device_id).first()
+        if not device:
+            return jsonify({'error': 'Device not found'}), 404
+        if not has_device_access(device):
+            return jsonify({'error': 'Login or valid device API key required'}), 401
+
+        user = User.query.get(device.user_id)
+        result = create_geo_weather_records(
+            user,
+            device,
+            force=str(request.args.get('force', '')).lower() in {'1', 'true', 'yes', 'on'}
+        )
+        status = 201 if result.get('status') in {'success', 'updated'} else 200
+        return jsonify(result), status
+
+    except Exception as e:
+        current_app.logger.error(f"Error in geo weather sync: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 
@@ -1389,16 +1601,15 @@ def upload_disease_image():
         
         if image_file.filename == '':
             return jsonify({'error': 'No image selected'}), 400
+        if not allowed_image_file(image_file.filename):
+            return jsonify({'error': 'Unsupported image type. Use PNG, JPG, JPEG, WEBP, BMP, GIF, or AVIF.'}), 400
         
         # Save image
         from werkzeug.utils import secure_filename
-        import os
         
         filename = secure_filename(f"{datetime.utcnow().timestamp()}_{image_file.filename}")
-        upload_folder = 'static/uploads/disease_images/'
-        os.makedirs(upload_folder, exist_ok=True)
-        
-        filepath = os.path.join(upload_folder, filename)
+        upload_folder = disease_upload_folder()
+        filepath = str(upload_folder / filename)
         image_file.save(filepath)
         
         # Save detection record
@@ -1415,8 +1626,12 @@ def upload_disease_image():
         started_at = perf_counter()
         detection_results = analyze_image_for_disease(filepath)
         current_app.logger.info("Disease inference finished in %.2fs for %s", perf_counter() - started_at, filename)
-        original_image_url = f'/static/uploads/disease_images/{filename}'
-        diagnosis_image_url = detection_results.get('annotated_image_url') or original_image_url
+        original_image_url = public_image_url(filepath) or f'/uploads/disease_images/{filename}'
+        diagnosis_image_url = (
+            public_image_url(detection_results.get('annotated_image_path'))
+            or detection_results.get('annotated_image_url')
+            or original_image_url
+        )
         
         detection = DiseaseDetection(
             user_id=user.id,
@@ -1436,7 +1651,7 @@ def upload_disease_image():
         notification_id = None
         
         # Create notification if disease detected
-        if detection.primary_disease:
+        if disease_detected(detection.primary_disease, detection.disease_confidence):
             notification = create_notification(
                 user,
                 f"Disease Detected: {detection.primary_disease} ({detection.disease_confidence:.1f}% confidence)",
@@ -1458,7 +1673,11 @@ def upload_disease_image():
             'confidence': detection.disease_confidence,
             'severity': detection.severity_level,
             'detections': detection_results.get('detections', {}),
+            'possible_detections': detection_results.get('possible_detections', {}),
             'boxes': detection_results.get('boxes', []),
+            'discarded_low_confidence': detection_results.get('discarded_low_confidence', 0),
+            'confidence_threshold': detection_results.get('confidence_threshold'),
+            'possible_confidence_threshold': detection_results.get('possible_confidence_threshold'),
             'recommendations': detection_results.get('recommendations', [])
         }), 201
         
@@ -1480,10 +1699,11 @@ def upload_user_disease_image():
     image_file = request.files['image']
     if image_file.filename == '':
         return jsonify({'error': 'No image selected'}), 400
+    if not allowed_image_file(image_file.filename):
+        return jsonify({'error': 'Unsupported image type. Use PNG, JPG, JPEG, WEBP, BMP, GIF, or AVIF.'}), 400
 
     try:
         from werkzeug.utils import secure_filename
-        import os
 
         user = User.query.get(user_id)
         if not user:
@@ -1496,17 +1716,19 @@ def upload_user_disease_image():
             device.is_active = True
 
         filename = secure_filename(f"{datetime.utcnow().timestamp()}_{image_file.filename}")
-        upload_folder = os.path.join('static', 'uploads', 'disease_images')
-        os.makedirs(upload_folder, exist_ok=True)
-
-        filepath = os.path.join(upload_folder, filename)
+        upload_folder = disease_upload_folder()
+        filepath = str(upload_folder / filename)
         image_file.save(filepath)
 
         started_at = perf_counter()
         detection_results = analyze_image_for_disease(filepath)
         current_app.logger.info("Disease inference finished in %.2fs for %s", perf_counter() - started_at, filename)
-        original_image_url = f'/static/uploads/disease_images/{filename}'
-        diagnosis_image_url = detection_results.get('annotated_image_url') or original_image_url
+        original_image_url = public_image_url(filepath) or f'/uploads/disease_images/{filename}'
+        diagnosis_image_url = (
+            public_image_url(detection_results.get('annotated_image_path'))
+            or detection_results.get('annotated_image_url')
+            or original_image_url
+        )
 
         detection = DiseaseDetection(
             user_id=user.id,
@@ -1525,7 +1747,7 @@ def upload_user_disease_image():
         db.session.commit()
         notification_id = None
 
-        if detection.primary_disease:
+        if disease_detected(detection.primary_disease, detection.disease_confidence):
             notification = create_notification(
                 user,
                 f"Disease Detected: {detection.primary_disease} ({detection.disease_confidence:.1f}% confidence)",
@@ -1545,7 +1767,11 @@ def upload_user_disease_image():
             'confidence': detection.disease_confidence,
             'severity': detection.severity_level,
             'detections': detection_results.get('detections', {}),
+            'possible_detections': detection_results.get('possible_detections', {}),
             'boxes': detection_results.get('boxes', []),
+            'discarded_low_confidence': detection_results.get('discarded_low_confidence', 0),
+            'confidence_threshold': detection_results.get('confidence_threshold'),
+            'possible_confidence_threshold': detection_results.get('possible_confidence_threshold'),
             'recommendations': detection_results.get('recommendations', [])
         }), 201
 
@@ -1569,7 +1795,7 @@ def get_disease_detections(device_id):
             .order_by(DiseaseDetection.timestamp.desc()).limit(limit).all()
         return jsonify({
             'device_id': device_id,
-            'detections': [detection.to_dict() for detection in detections]
+            'detections': [disease_detection_payload(detection) for detection in detections]
         }), 200
 
     except Exception as e:
@@ -1867,6 +2093,169 @@ def latest_project_for_user(user):
     return Project.query.filter_by(user_id=user.id).order_by(Project.updated_at.desc()).first()
 
 
+def weather_location(user, device=None, project=None):
+    lat = None
+    lon = None
+    if project:
+        lat = project.latitude
+        lon = project.longitude
+    if (lat is None or lon is None) and user:
+        lat = user.farm_location_lat
+        lon = user.farm_location_lon
+    if (lat is None or lon is None) and device:
+        lat = device.device_location_lat
+        lon = device.device_location_lon
+
+    lat = number_or_none(lat)
+    lon = number_or_none(lon)
+    if lat is None or lon is None:
+        return None
+    return lat, lon
+
+
+def parse_forecast_date(value):
+    try:
+        return datetime.fromisoformat(str(value).replace('Z', '+00:00')).replace(tzinfo=None)
+    except Exception:
+        try:
+            return datetime.strptime(str(value), '%Y-%m-%d')
+        except Exception:
+            return datetime.utcnow()
+
+
+def daily_value(daily, key, index):
+    values = daily.get(key) or []
+    if index >= len(values):
+        return None
+    return number_or_none(values[index])
+
+
+def create_geo_weather_records(user, device, force=False):
+    """Fetch Open-Meteo current/daily weather for the farm location and save DB rows."""
+    if not user or not device:
+        return {'status': 'missing_user_or_device', 'records': []}
+    if requests is None:
+        return {'status': 'requests_unavailable', 'records': []}
+
+    project = latest_project_for_user(user)
+    location = weather_location(user, device, project)
+    if not location:
+        return {'status': 'missing_location', 'records': []}
+
+    latest_geo = WeatherRecord.query.filter(
+        WeatherRecord.user_id == user.id,
+        WeatherRecord.device_id == device.device_id,
+        WeatherRecord.source.in_(['geo_realtime', 'geo_daily']),
+        WeatherRecord.created_at >= datetime.utcnow() - timedelta(hours=6)
+    ).order_by(WeatherRecord.created_at.desc()).limit(8).all()
+    if latest_geo and not force:
+        return {
+            'status': 'cached',
+            'location': {'latitude': location[0], 'longitude': location[1]},
+            'records': [record.to_dict() for record in latest_geo]
+        }
+
+    latitude, longitude = location
+    params = {
+        'latitude': latitude,
+        'longitude': longitude,
+        'current': 'temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,rain,pressure_msl',
+        'daily': 'temperature_2m_max,temperature_2m_min,apparent_temperature_max,precipitation_sum,precipitation_probability_max,weather_code',
+        'timezone': 'auto',
+        'forecast_days': 7
+    }
+
+    response = requests.get(
+        'https://api.open-meteo.com/v1/forecast',
+        params=params,
+        timeout=float(os.environ.get('GEO_WEATHER_TIMEOUT_SECONDS', '8'))
+    )
+    response.raise_for_status()
+    payload = response.json()
+    saved = []
+    now = datetime.utcnow()
+
+    current = payload.get('current') or {}
+    current_temp = number_or_none(current.get('temperature_2m'))
+    current_rain = first_present(current, 'rain', 'precipitation')
+    current_record = WeatherRecord(
+        user_id=user.id,
+        device_id=device.device_id,
+        project_id=project.id if project else None,
+        source='geo_realtime',
+        horizon_minutes=0,
+        max_temperature=current_temp,
+        min_temperature=current_temp,
+        apparent_temperature=number_or_none(current.get('apparent_temperature')),
+        humidity=number_or_none(current.get('relative_humidity_2m')),
+        pressure=number_or_none(current.get('pressure_msl')),
+        rainfall=number_or_none(current_rain),
+        confidence=96,
+        model_status='open_meteo_current',
+        raw_payload=json.dumps({
+            'provider': 'open_meteo',
+            'location': {'latitude': latitude, 'longitude': longitude},
+            'current': current
+        }),
+        agent_summary='Geolocation current weather saved from Open-Meteo.',
+        forecast_for=parse_forecast_date(current.get('time')) if current.get('time') else now,
+        created_at=now
+    )
+    db.session.add(current_record)
+    saved.append(current_record)
+
+    daily = payload.get('daily') or {}
+    days = daily.get('time') or []
+    for index, day in enumerate(days[:7]):
+        forecast_for = parse_forecast_date(day)
+        day_start = forecast_for.replace(hour=0, minute=0, second=0, microsecond=0)
+        existing = WeatherRecord.query.filter(
+            WeatherRecord.user_id == user.id,
+            WeatherRecord.device_id == device.device_id,
+            WeatherRecord.source == 'geo_daily',
+            WeatherRecord.forecast_for >= day_start,
+            WeatherRecord.forecast_for < day_start + timedelta(days=1)
+        ).first()
+
+        record = existing or WeatherRecord(
+            user_id=user.id,
+            device_id=device.device_id,
+            project_id=project.id if project else None,
+            source='geo_daily',
+            forecast_for=forecast_for
+        )
+        record.horizon_minutes = max(0, int((forecast_for - now).total_seconds() // 60))
+        record.max_temperature = daily_value(daily, 'temperature_2m_max', index)
+        record.min_temperature = daily_value(daily, 'temperature_2m_min', index)
+        record.apparent_temperature = daily_value(daily, 'apparent_temperature_max', index)
+        record.humidity = None
+        record.pressure = None
+        record.rainfall = daily_value(daily, 'precipitation_sum', index)
+        record.confidence = 94
+        record.model_status = 'open_meteo_daily_forecast'
+        record.raw_payload = json.dumps({
+            'provider': 'open_meteo',
+            'location': {'latitude': latitude, 'longitude': longitude},
+            'date': day,
+            'precipitation_probability_max': daily_value(daily, 'precipitation_probability_max', index),
+            'weather_code': daily_value(daily, 'weather_code', index)
+        })
+        record.agent_summary = f'Geo daily weather for {day}: max {record.max_temperature} C, min {record.min_temperature} C, rainfall {record.rainfall} mm.'
+        record.created_at = now
+        if not existing:
+            db.session.add(record)
+        saved.append(record)
+
+    db.session.commit()
+    mirror_weather_records_async(current_app._get_current_object(), [record.id for record in saved])
+
+    return {
+        'status': 'success',
+        'location': {'latitude': latitude, 'longitude': longitude},
+        'records': [record.to_dict() for record in saved]
+    }
+
+
 def record_realtime_weather_from_sensor(user, device_id, reading, raw_data=None):
     """Store realtime weather-like values from ESP32 and optional payload fields."""
     raw_data = raw_data or {}
@@ -1896,7 +2285,7 @@ def record_realtime_weather_from_sensor(user, device_id, reading, raw_data=None)
     )
     db.session.add(record)
     db.session.commit()
-    mirror_weather_record(record)
+    mirror_weather_records_async(current_app._get_current_object(), [record.id])
     return record
 
 
@@ -1956,7 +2345,7 @@ def create_weather_prediction_record(user, device, force=False, notify=False):
     )
     db.session.add(record)
     db.session.commit()
-    mirror_weather_record(record)
+    mirror_weather_records_async(current_app._get_current_object(), [record.id])
 
     maybe_save_weather_crop_recommendation(user, record, agent, three_month_summary)
 

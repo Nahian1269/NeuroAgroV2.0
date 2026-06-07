@@ -5,9 +5,11 @@
 
 import os
 IS_VERCEL = bool(os.environ.get('VERCEL') or os.environ.get('VERCEL_ENV'))
-if IS_VERCEL:
+IS_RENDER = bool(os.environ.get('RENDER') or os.environ.get('RENDER_SERVICE_ID'))
+IS_CLOUD_RUNTIME = IS_VERCEL or IS_RENDER
+if IS_CLOUD_RUNTIME:
     os.environ.setdefault('YOLO_CONFIG_DIR', '/tmp/yolo_config')
-    os.environ.setdefault('WEATHER_CALIBRATION_PATH', '/tmp/weather_calibration.json')
+    os.environ.setdefault('WEATHER_CALIBRATION_PATH', '/tmp/nuroagro_weather_calibration.json')
 else:
     os.environ.setdefault('YOLO_CONFIG_DIR', os.path.join(os.getcwd(), 'static', 'yolo_config'))
 
@@ -47,15 +49,24 @@ from disease_ml import load_model as load_disease_model
 load_dotenv()
 app = Flask(__name__)
 
+def normalize_database_url(url):
+    """Render/Postgres providers may expose postgres://, while SQLAlchemy expects postgresql://."""
+    if url and url.startswith('postgres://'):
+        return url.replace('postgres://', 'postgresql://', 1)
+    return url
+
+
+database_url = normalize_database_url(os.environ.get('DATABASE_URL'))
+
 # Configuration
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL') or ('sqlite:////tmp/vertical_farming.db' if IS_VERCEL else 'sqlite:///vertical_farming.db')
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url or ('sqlite:////tmp/nuroagro_vertical_farming.db' if IS_CLOUD_RUNTIME else 'sqlite:///vertical_farming.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'nuroagro-dev-secret-change-in-production')
 app.config['SESSION_TYPE'] = 'filesystem'
-app.config['SESSION_FILE_DIR'] = os.environ.get('SESSION_FILE_DIR') or ('/tmp/flask_session' if IS_VERCEL else 'flask_session')
+app.config['SESSION_FILE_DIR'] = os.environ.get('SESSION_FILE_DIR') or ('/tmp/nuroagro_flask_session' if IS_CLOUD_RUNTIME else 'flask_session')
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_SECURE'] = os.environ.get('SESSION_COOKIE_SECURE', 'false').lower() == 'true'
-app.config['UPLOAD_FOLDER'] = os.environ.get('UPLOAD_FOLDER') or ('/tmp/nuroagro_uploads' if IS_VERCEL else 'static/uploads/')
+app.config['UPLOAD_FOLDER'] = os.environ.get('UPLOAD_FOLDER') or ('/tmp/nuroagro_uploads' if IS_CLOUD_RUNTIME else 'static/uploads/')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 app.config['DEVICE_API_KEY'] = os.environ.get('DEVICE_API_KEY', 'farm-device-key')
 app.config['ADMIN_PASSWORD'] = os.environ.get('ADMIN_PASSWORD', app.config['SECRET_KEY'])
@@ -99,14 +110,14 @@ Session(app)
 db.init_app(app)
 
 # Set up logging
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=os.environ.get('LOG_LEVEL', 'INFO').upper())
 logger = logging.getLogger(__name__)
 
 # Create runtime directories. Vercel functions can only write to /tmp.
 os.makedirs(app.config['SESSION_FILE_DIR'], exist_ok=True)
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'disease_images'), exist_ok=True)
-os.makedirs(os.environ.get('YOLO_CONFIG_DIR', '/tmp/yolo_config' if IS_VERCEL else os.path.join(os.getcwd(), 'static', 'yolo_config')), exist_ok=True)
+os.makedirs(os.environ.get('YOLO_CONFIG_DIR', '/tmp/yolo_config' if IS_CLOUD_RUNTIME else os.path.join(os.getcwd(), 'static', 'yolo_config')), exist_ok=True)
 
 model = None
 model_load_error = None
@@ -132,13 +143,14 @@ def load_yolo_model():
 def warm_disease_model_async():
     """Load the disease model after startup so the first scan is not cold."""
     global model_preload_started
-    if model_preload_started or os.environ.get('DISEASE_MODEL_PRELOAD', 'false').lower() in {'0', 'false', 'no', 'off'}:
+    preload_default = 'true' if IS_CLOUD_RUNTIME else 'false'
+    if model_preload_started or os.environ.get('DISEASE_MODEL_PRELOAD', preload_default).lower() in {'0', 'false', 'no', 'off'}:
         return
     model_preload_started = True
 
     def preload():
         try:
-            sleep(float(os.environ.get('DISEASE_MODEL_PRELOAD_DELAY', '5')))
+            sleep(float(os.environ.get('DISEASE_MODEL_PRELOAD_DELAY', '2')))
             load_yolo_model()
         except Exception as exc:
             logger.warning("Disease model preload skipped: %s", exc)
@@ -162,7 +174,7 @@ def frontend_dist_available():
 
 
 def is_react_browser_request():
-    protected_prefixes = ('/api/', '/static/', '/assets/')
+    protected_prefixes = ('/api/', '/static/', '/assets/', '/uploads/')
     return (
         frontend_dist_available()
         and request.method == 'GET'
@@ -216,6 +228,12 @@ def frontend_assets(filename):
     if frontend_dist_available():
         return send_from_directory(FRONTEND_ASSETS, filename)
     return jsonify({'error': 'Frontend build not found. Run npm run build in frontend_jsx.'}), 404
+
+
+@app.route('/uploads/<path:filename>')
+def uploaded_file(filename):
+    """Serve runtime uploads from the configured upload folder, including Render /tmp."""
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 
 @app.before_request
@@ -769,6 +787,16 @@ def ensure_runtime_schema():
                 if column not in existing:
                     connection.execute(text(statement))
         connection.execute(text("UPDATE users SET approval_status = 'accepted' WHERE approval_status IS NULL"))
+        for statement in [
+            "CREATE INDEX IF NOT EXISTS idx_sensor_readings_device_time ON sensor_readings (device_id, timestamp)",
+            "CREATE INDEX IF NOT EXISTS idx_sensor_readings_user_time ON sensor_readings (user_id, timestamp)",
+            "CREATE INDEX IF NOT EXISTS idx_weather_records_user_time ON weather_records (user_id, created_at)",
+            "CREATE INDEX IF NOT EXISTS idx_weather_records_device_time ON weather_records (device_id, created_at)",
+            "CREATE INDEX IF NOT EXISTS idx_disease_detections_user_time ON disease_detections (user_id, timestamp)",
+            "CREATE INDEX IF NOT EXISTS idx_notifications_user_read_time ON notifications (user_id, is_read, created_at)",
+            "CREATE INDEX IF NOT EXISTS idx_recommendations_user_active_time ON recommendations (user_id, is_active, time_of_analysis)"
+        ]:
+            connection.execute(text(statement))
 
 
 def ensure_demo_data():
@@ -819,14 +847,10 @@ def ensure_demo_data():
     logger.info("Demo user and ESP32 device created.")
 
 
-try:
-    create_app()
-except Exception as exc:
-    logger.error("Database initialization skipped: %s", exc)
-
 if __name__ == '__main__':
-    # Run app
-    app.run(debug=True, host='0.0.0.0', port=5001)
+    port = int(os.environ.get('PORT') or os.environ.get('IOT_APP_PORT', '5001'))
+    host = os.environ.get('IOT_APP_HOST') or ('0.0.0.0' if os.environ.get('PORT') else '127.0.0.1')
+    create_app().run(debug=False, host=host, port=port, use_reloader=False)
 
 
 

@@ -178,6 +178,7 @@ cython_debug/
 
 # NuroAgro runtime/generated files
 frontend_jsx/node_modules/
+frontend_jsx/dist/
 flask_session/
 *.out
 *.err

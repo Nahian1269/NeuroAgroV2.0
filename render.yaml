@@ -1,0 +1,44 @@
+services:
+  - type: web
+    name: nuroagro
+    runtime: python
+    buildCommand: pip install -r requirements.txt && npm --prefix frontend_jsx ci && npm --prefix frontend_jsx run build
+    startCommand: gunicorn "app_iot:create_app()" --bind 0.0.0.0:$PORT --workers 1 --timeout 180
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.11
+      - key: NODE_VERSION
+        value: 22.16.0
+      - key: DISEASE_MODEL_PRELOAD
+        value: "true"
+      - key: DISEASE_MODEL_PRELOAD_DELAY
+        value: "2"
+      - key: WEATHER_MODEL_ENABLED
+        value: "true"
+      - key: WEATHER_TRANSFORMER_TIMEOUT_SECONDS
+        value: "12"
+      - key: WEATHER_GEO_AUTOSYNC
+        value: "true"
+      - key: GEO_WEATHER_TIMEOUT_SECONDS
+        value: "8"
+      - key: DISEASE_CONFIDENCE_THRESHOLD
+        value: "0.20"
+      - key: DISEASE_POSSIBLE_CONFIDENCE_THRESHOLD
+        value: "0.12"
+      - key: DISEASE_MAX_ANALYSIS_EDGE
+        value: "960"
+      - key: DISEASE_YOLO_IMGSZ
+        value: "512"
+      - key: LOG_LEVEL
+        value: "INFO"
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: SESSION_COOKIE_SECURE
+        value: "true"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEVICE_API_KEY
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false

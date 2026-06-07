@@ -14,6 +14,10 @@
   --amber: #b77b15;
   --coral: #b64d4b;
   --indigo: #4d5d9f;
+  --rose: #c04472;
+  --violet: #6957b8;
+  --lime: #6d932c;
+  --sky: #327fb8;
   --shadow: 0 18px 42px rgba(23, 33, 28, 0.09);
 }
 
@@ -672,6 +676,51 @@ select { appearance: none; }
 .status-band.danger { background: var(--coral); }
 .status-band.idle { background: #58645d; }
 
+.feature-strip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0 0;
+}
+
+.feature-chip {
+  min-height: 76px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.feature-chip svg {
+  width: 22px;
+  height: 22px;
+  color: var(--green);
+}
+
+.feature-chip.waiting svg { color: var(--amber); }
+
+.feature-chip strong,
+.feature-chip span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.feature-chip strong {
+  color: var(--deep);
+  font-size: 0.88rem;
+}
+
+.feature-chip span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
 .panel-title {
   justify-content: space-between;
   gap: 10px;
@@ -777,6 +826,17 @@ select { appearance: none; }
   margin-bottom: 14px;
 }
 
+.model-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
 .weather-grid {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -842,6 +902,25 @@ select { appearance: none; }
 
 .disease-history-panel {
   margin-top: 14px;
+}
+
+.quality-list {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.quality-list span {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 800;
 }
 
 .disease-history-grid {
@@ -1246,6 +1325,7 @@ th {
   .weather-grid,
   .weather-insight-grid,
   .disease-history-grid,
+  .feature-strip,
   .admin-metrics,
   .admin-dashboard-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1315,6 +1395,7 @@ th {
   .weather-grid,
   .weather-insight-grid,
   .disease-history-grid,
+  .feature-strip,
   .score-grid,
   .visual-glass {
     grid-template-columns: 1fr;
@@ -1517,16 +1598,319 @@ textarea {
   min-width: 0;
 }
 
+.global-search {
+  flex: 1 1 220px;
+  max-width: 280px;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--muted);
+}
+
+.global-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.manual-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 16px;
+  padding: 28px;
+  border: 1px solid rgba(18, 49, 38, 0.12);
+  border-radius: 8px;
+  background: linear-gradient(135deg, #ffffff 0%, #f0f6f3 54%, #eef5f8 100%);
+  box-shadow: var(--shadow);
+}
+
+.manual-hero h2 {
+  margin-bottom: 8px;
+}
+
+.manual-hero p {
+  max-width: 760px;
+  color: var(--muted);
+  line-height: 1.55;
+  margin-bottom: 0;
+}
+
+.manual-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.manual-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.manual-card p {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.manual-card p:last-child {
+  margin-bottom: 0;
+}
+
+.pin-diagram {
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr);
+  gap: 18px;
+  align-items: center;
+  margin: 12px 0 18px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f7faf7;
+}
+
+.esp-board {
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+  position: relative;
+  border: 1px solid rgba(18, 49, 38, 0.22);
+  border-radius: 8px;
+  background: linear-gradient(180deg, #1b3b31, #244c42);
+  color: #fff;
+  font-weight: 950;
+}
+
+.esp-board i {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.16);
+  font-style: normal;
+  font-size: 0.78rem;
+}
+
+.pin-lines {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.pin-lines span {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--muted);
+}
+
+.pin-lines b {
+  color: var(--deep);
+}
+
+.app-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 26px;
+  padding: 18px 0 4px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.app-footer div,
+.app-footer nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.app-footer strong {
+  color: var(--deep);
+}
+
+.app-footer button {
+  border: 0;
+  background: transparent;
+  color: var(--deep);
+  font-weight: 900;
+}
+
+.cropguard-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 190px minmax(260px, 0.9fr);
+  gap: 14px;
+  align-items: center;
+  margin: 14px 0;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: var(--shadow);
+}
+
+.cropguard-panel h3 {
+  margin-bottom: 8px;
+  color: var(--deep);
+  font-size: 1.45rem;
+}
+
+.cropguard-panel p {
+  margin-bottom: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.cropguard-panel.good {
+  border-color: rgba(109, 147, 44, 0.32);
+}
+
+.cropguard-panel.warn {
+  border-color: rgba(183, 123, 21, 0.36);
+}
+
+.cropguard-panel.danger {
+  border-color: rgba(192, 68, 114, 0.34);
+}
+
+.risk-meter {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  border-radius: 8px;
+  background: #f6f8f6;
+  border: 1px solid var(--line);
+}
+
+.risk-meter strong {
+  color: var(--deep);
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.risk-meter span {
+  color: var(--muted);
+  font-weight: 900;
+}
+
+.risk-meter i {
+  height: 5px;
+  display: block;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--lime), var(--amber), var(--rose));
+}
+
+.risk-factors {
+  display: grid;
+  gap: 8px;
+}
+
+.risk-factors span,
+.daily-weather-strip article {
+  display: grid;
+  gap: 3px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f9fbfa;
+  color: var(--muted);
+}
+
+.risk-factors b,
+.daily-weather-strip strong {
+  color: var(--deep);
+}
+
+.daily-weather-strip {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(112px, 1fr));
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.daily-weather-strip span {
+  color: var(--sky);
+  font-weight: 950;
+}
+
+.daily-weather-strip small {
+  color: var(--muted);
+}
+
+.metric-card:nth-child(2) .metric-icon,
+.feature-chip:nth-child(2) svg {
+  color: var(--sky);
+}
+
+.metric-card:nth-child(5) .metric-icon,
+.feature-chip:nth-child(3) svg {
+  color: var(--rose);
+}
+
+.metric-card:nth-child(7) .metric-icon,
+.feature-chip:nth-child(4) svg {
+  color: var(--violet);
+}
+
 @media (max-width: 700px) {
   .form-actions,
   .chat-compose,
   .reply-row,
-  .admin-chat-layout {
+  .admin-chat-layout,
+  .manual-hero,
+  .pin-diagram,
+  .app-footer,
+  .cropguard-panel {
     display: grid;
     grid-template-columns: 1fr;
   }
 
   .chat-message {
     max-width: 100%;
+  }
+
+  .global-search {
+    max-width: none;
+    width: 100%;
+  }
+
+  .manual-grid,
+  .pin-lines,
+  .daily-weather-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .manual-actions,
+  .app-footer nav {
+    justify-content: stretch;
+  }
+
+  .manual-actions button {
+    width: 100%;
   }
 }

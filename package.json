@@ -1,7 +1,7 @@
 {
   "scripts": {
     "dev": "node scripts/dev-final.mjs",
-    "start": "node scripts/dev-final.mjs",
+    "start": "npm run build && node scripts/dev-final.mjs",
     "build": "npm --prefix frontend_jsx run build",
     "frontend:dev": "npm --prefix frontend_jsx run dev:vite",
     "backend:dev": "node scripts/dev.mjs --no-open",
