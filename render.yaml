@@ -30,6 +30,10 @@ services:
         value: "960"
       - key: DISEASE_YOLO_IMGSZ
         value: "512"
+      - key: DISEASE_INFERENCE_SUBPROCESS
+        value: "true"
+      - key: DISEASE_INFERENCE_TIMEOUT_SECONDS
+        value: "110"
       - key: LOG_LEVEL
         value: "INFO"
       - key: PYTHONUNBUFFERED

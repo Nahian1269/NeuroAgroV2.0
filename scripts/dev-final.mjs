@@ -129,6 +129,8 @@ async function startBackend(targetPort) {
       ...process.env,
       IOT_APP_PORT: String(port),
       DISEASE_MODEL_PRELOAD: process.env.DISEASE_MODEL_PRELOAD || 'false',
+      DISEASE_INFERENCE_SUBPROCESS: process.env.DISEASE_INFERENCE_SUBPROCESS || 'true',
+      DISEASE_INFERENCE_TIMEOUT_SECONDS: process.env.DISEASE_INFERENCE_TIMEOUT_SECONDS || '110',
       WEATHER_TRANSFORMER_TIMEOUT_SECONDS: process.env.WEATHER_TRANSFORMER_TIMEOUT_SECONDS || '8',
     },
     stdio: 'inherit',

@@ -1,6 +1,10 @@
 """Shared YOLO disease analysis and image annotation utilities."""
 
+import json
 import os
+import signal
+import subprocess
+import sys
 from pathlib import Path
 from threading import Lock
 
@@ -41,6 +45,7 @@ YOLO_IMAGE_SIZE = int(os.environ.get('DISEASE_YOLO_IMGSZ', '512'))
 CONFIDENCE_THRESHOLD = float(os.environ.get('DISEASE_CONFIDENCE_THRESHOLD', '0.20'))
 POSSIBLE_CONFIDENCE_THRESHOLD = float(os.environ.get('DISEASE_POSSIBLE_CONFIDENCE_THRESHOLD', '0.12'))
 HEALTHY_CONFIDENCE = float(os.environ.get('DISEASE_HEALTHY_CONFIDENCE', '0.0'))
+INFERENCE_TIMEOUT_SECONDS = float(os.environ.get('DISEASE_INFERENCE_TIMEOUT_SECONDS', '110'))
 _MODEL_CACHE = None
 _MODEL_LOCK = Lock()
 
@@ -382,4 +387,103 @@ def analyze_image_for_disease(image_path, model=None, logger=None):
         'annotated_image_path': annotated_path,
         'annotated_image_url': static_url_for_path(annotated_path)
     }
+
+
+def analyze_image_for_disease_guarded(image_path, logger=None):
+    """Run YOLO in an isolated worker so inference cannot crash the Flask server."""
+    if os.environ.get('DISEASE_INFERENCE_SUBPROCESS', 'true').lower() in {'0', 'false', 'no', 'off'}:
+        return analyze_image_for_disease(image_path, logger=logger)
+
+    env = os.environ.copy()
+    env['DISEASE_INFERENCE_SUBPROCESS'] = 'false'
+    process = None
+    try:
+        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0
+        process = subprocess.Popen(
+            [sys.executable, os.path.abspath(__file__), '--analyze-json', str(image_path)],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env,
+            creationflags=creationflags,
+            start_new_session=os.name != 'nt',
+        )
+        stdout, stderr = process.communicate(timeout=INFERENCE_TIMEOUT_SECONDS)
+        returncode = process.returncode
+        output = (stdout or '').strip().splitlines()
+        if returncode != 0:
+            message = (stderr or stdout or 'Disease worker failed').strip()
+            return {
+                'error': f'Disease worker failed: {message[:320]}',
+                'primary_disease': None,
+                'confidence': 0,
+                'detections': {},
+                'boxes': [],
+                'recommendations': []
+            }
+        if not output:
+            return {
+                'error': 'Disease worker returned no result.',
+                'primary_disease': None,
+                'confidence': 0,
+                'detections': {},
+                'boxes': [],
+                'recommendations': []
+            }
+        return json.loads(output[-1])
+    except subprocess.TimeoutExpired:
+        if process is not None:
+            try:
+                if os.name == 'nt':
+                    subprocess.run(
+                        ['taskkill', '/PID', str(process.pid), '/T', '/F'],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        check=False,
+                    )
+                    cleanup_script = (
+                        "Get-CimInstance Win32_Process -Filter \"name = 'python.exe'\" | "
+                        "Where-Object { $_.CommandLine -like '*disease_ml.py*--analyze-json*' } | "
+                        "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
+                    )
+                    subprocess.run(
+                        ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', cleanup_script],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        check=False,
+                    )
+                else:
+                    os.killpg(process.pid, signal.SIGKILL)
+            except Exception:
+                pass
+        return {
+            'error': f'Disease analysis exceeded {INFERENCE_TIMEOUT_SECONDS:.0f}s. Try a smaller, clearer image.',
+            'primary_disease': None,
+            'confidence': 0,
+            'detections': {},
+            'boxes': [],
+            'recommendations': []
+        }
+    except Exception as exc:
+        if logger:
+            logger.error(f'Disease worker error: {exc}')
+        return {
+            'error': f'Disease worker error: {exc}',
+            'primary_disease': None,
+            'confidence': 0,
+            'detections': {},
+            'boxes': [],
+            'recommendations': []
+        }
+
+
+def _cli_analyze_json():
+    image_path = sys.argv[sys.argv.index('--analyze-json') + 1]
+    result = analyze_image_for_disease(image_path)
+    print(json.dumps(result))
+
+
+if __name__ == '__main__' and '--analyze-json' in sys.argv:
+    _cli_analyze_json()
 

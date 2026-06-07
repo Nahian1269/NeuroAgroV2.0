@@ -100,6 +100,8 @@ Production defaults keep the app ready for product demos:
 - `GEO_WEATHER_TIMEOUT_SECONDS=8` keeps geolocation weather sync from blocking the app too long.
 - `DISEASE_MODEL_PRELOAD=true` warms YOLO after startup so the first scan is smoother.
 - `DISEASE_MAX_ANALYSIS_EDGE=960` and `DISEASE_YOLO_IMGSZ=512` keep disease scans responsive.
+- `DISEASE_INFERENCE_SUBPROCESS=true` isolates YOLO/PyTorch from Flask so a bad scan cannot crash the web app.
+- `DISEASE_INFERENCE_TIMEOUT_SECONDS=110` returns a clean UI error if a scan stalls too long.
 - `DISEASE_CONFIDENCE_THRESHOLD=0.20` matches the supplied `best.pt` model, whose valid disease boxes often score around 20-40%.
 - `DISEASE_POSSIBLE_CONFIDENCE_THRESHOLD=0.12` keeps very weak disease evidence visible as "possible" instead of silently reporting healthy.
 

@@ -17,7 +17,7 @@ from functools import wraps
 from threading import Thread
 from time import perf_counter
 from disease_ml import (
-    analyze_image_for_disease as run_disease_analysis,
+    analyze_image_for_disease_guarded as run_disease_analysis,
     generate_disease_recommendations as build_disease_recommendations
 )
 from sensor_agent import analyze_sensor_history
@@ -1626,6 +1626,13 @@ def upload_disease_image():
         started_at = perf_counter()
         detection_results = analyze_image_for_disease(filepath)
         current_app.logger.info("Disease inference finished in %.2fs for %s", perf_counter() - started_at, filename)
+        if detection_results.get('error'):
+            return jsonify({
+                'error': detection_results.get('error'),
+                'status': 'disease_worker_failed',
+                'primary_disease': None,
+                'confidence': 0
+            }), 503
         original_image_url = public_image_url(filepath) or f'/uploads/disease_images/{filename}'
         diagnosis_image_url = (
             public_image_url(detection_results.get('annotated_image_path'))
@@ -1723,6 +1730,13 @@ def upload_user_disease_image():
         started_at = perf_counter()
         detection_results = analyze_image_for_disease(filepath)
         current_app.logger.info("Disease inference finished in %.2fs for %s", perf_counter() - started_at, filename)
+        if detection_results.get('error'):
+            return jsonify({
+                'error': detection_results.get('error'),
+                'status': 'disease_worker_failed',
+                'primary_disease': None,
+                'confidence': 0
+            }), 503
         original_image_url = public_image_url(filepath) or f'/uploads/disease_images/{filename}'
         diagnosis_image_url = (
             public_image_url(detection_results.get('annotated_image_path'))
