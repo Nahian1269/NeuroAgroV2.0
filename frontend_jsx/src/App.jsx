@@ -147,6 +147,12 @@ const fishOptions = ['Tilapia fry', 'Guppy', 'Molly', 'Zebra danio', 'Goldfish j
 const systemOptions = ['hydroponic', 'aquaponic', 'aeroponic', 'hybrid', 'soil'];
 const modeOptions = ['hybrid', 'vertical', 'traditional', 'hydroponic', 'aquaponic', 'aeroponic'];
 
+function optionalNumber(value) {
+  if (value === '' || value === null || value === undefined) return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
 function initialPageFromPath() {
   const path = window.location.pathname.toLowerCase();
   if (path.startsWith('/admin')) return 'admin';
@@ -184,6 +190,7 @@ export default function App() {
   const [diseaseResult, setDiseaseResult] = useState(null);
   const [diseaseHistory, setDiseaseHistory] = useState([]);
   const [weatherData, setWeatherData] = useState(emptyWeatherData);
+  const [geoWeatherStatus, setGeoWeatherStatus] = useState(null);
   const [historyData, setHistoryData] = useState(emptyHistoryData);
   const [profileForm, setProfileForm] = useState(emptyProfileForm);
   const [profileDashboard, setProfileDashboard] = useState(null);
@@ -322,6 +329,7 @@ export default function App() {
     setNotifications([]);
     setDiseaseHistory([]);
     setWeatherData(emptyWeatherData);
+    setGeoWeatherStatus(null);
     setHistoryData(emptyHistoryData);
     setProfileForm(emptyProfileForm);
     setProfileDashboard(null);
@@ -350,7 +358,9 @@ export default function App() {
       setStatus(statusResponse.ok ? await statusResponse.json() : null);
       setRecommendations(recResponse.ok ? (await recResponse.json()).recommendations || [] : []);
       setNotifications(notificationResponse.ok ? await notificationResponse.json() : []);
-      setWeatherData(weatherResponse.ok ? await weatherResponse.json() : emptyWeatherData);
+      const nextWeatherData = weatherResponse.ok ? await weatherResponse.json() : emptyWeatherData;
+      setWeatherData(nextWeatherData);
+      setGeoWeatherStatus(nextWeatherData.geo_status || null);
       setDiseaseHistory(diseaseResponse.ok ? (await diseaseResponse.json()).detections || [] : []);
     } finally {
       setLoading(false);
@@ -383,10 +393,10 @@ export default function App() {
     const nextProject = {
       id: project?.id,
       ...projectForm,
-      area: Number(projectForm.area || 0),
+      area: optionalNumber(projectForm.area),
       stories: Number(projectForm.stories || 1),
-      latitude: Number(projectForm.latitude || 0),
-      longitude: Number(projectForm.longitude || 0),
+      latitude: optionalNumber(projectForm.latitude),
+      longitude: optionalNumber(projectForm.longitude),
       createdAt: project?.createdAt || new Date().toISOString()
     };
 
@@ -469,9 +479,9 @@ export default function App() {
           profile_notes: profileForm.profileNotes,
           farm_name: profileForm.farmName,
           plant_type: profileForm.plantType,
-          farm_size: profileForm.farmSize,
-          latitude: profileForm.latitude,
-          longitude: profileForm.longitude
+          farm_size: optionalNumber(profileForm.farmSize),
+          latitude: optionalNumber(profileForm.latitude),
+          longitude: optionalNumber(profileForm.longitude)
         })
       });
       if (response.ok) await loadProfile();
@@ -566,7 +576,11 @@ export default function App() {
   async function loadWeather(targetDeviceId = deviceId) {
     try {
       const response = await apiFetch(`/api/weather/${targetDeviceId}?limit=72`);
-      if (response.ok) setWeatherData(await response.json());
+      if (response.ok) {
+        const data = await response.json();
+        setWeatherData(data);
+        setGeoWeatherStatus(data.geo_status || null);
+      }
     } catch {
       setWeatherData((current) => ({ ...current }));
     }
@@ -614,7 +628,11 @@ export default function App() {
     setLoading(true);
     try {
       const response = await apiFetch(`/api/weather/geo/${deviceId}${force ? '?force=1' : ''}`, { method: 'POST' });
+      const result = await response.json().catch(() => null);
+      setGeoWeatherStatus(result || { status: response.ok ? 'success' : 'error' });
       if (response.ok) await loadWeather(deviceId);
+    } catch (error) {
+      setGeoWeatherStatus({ status: 'error', error: error?.message || 'Could not sync geolocation weather.' });
     } finally {
       setLoading(false);
     }
@@ -1385,6 +1403,7 @@ function DashboardPage(props) {
 
       <WeatherPanel
         weatherData={weatherData}
+        geoWeatherStatus={geoWeatherStatus}
         loading={loading}
         onPredict={runWeatherPrediction}
         onGeoWeather={syncGeoWeather}
@@ -2051,13 +2070,17 @@ function ControlPanel({ status, sendCommand, updateDeviceStatus }) {
 function Control({ title, active, onOn, onOff }) {
   return (
     <div className="control-row">
-      <div>
+      <div className="control-copy">
         <span>{title}</span>
-        <strong>{active ? 'ON' : 'OFF'}</strong>
+        <strong className={active ? 'relay-on' : 'relay-off'}>{active ? 'Running' : 'Stopped'}</strong>
       </div>
       <div className="button-pair">
-        <button type="button" onClick={onOn} title={`${title} on`}><Power size={16} /></button>
-        <button type="button" onClick={onOff} title={`${title} off`}><CircleOff size={16} /></button>
+        <button type="button" className={active ? 'selected' : ''} aria-pressed={Boolean(active)} onClick={onOn} title={`${title} on`}>
+          <Power size={16} /> On
+        </button>
+        <button type="button" className={!active ? 'selected off' : 'off'} aria-pressed={!active} onClick={onOff} title={`${title} off`}>
+          <CircleOff size={16} /> Off
+        </button>
       </div>
     </div>
   );
@@ -2072,7 +2095,7 @@ function RangeControl({ icon, label, value, min, max, unit, onChange }) {
   );
 }
 
-function WeatherPanel({ weatherData, loading, onPredict, onGeoWeather, onTrain }) {
+function WeatherPanel({ weatherData, geoWeatherStatus, loading, onPredict, onGeoWeather, onTrain }) {
   const prediction = weatherData?.latest_prediction;
   const realtime = weatherData?.latest_realtime;
   const geoDaily = weatherData?.daily_records || [];
@@ -2083,6 +2106,17 @@ function WeatherPanel({ weatherData, loading, onPredict, onGeoWeather, onTrain }
   const rawPrediction = prediction?.raw_payload || {};
   const modelSource = rawPrediction.source || prediction?.source || 'waiting';
   const sampleCount = rawPrediction.input_samples;
+  const geoStatus = geoWeatherStatus || weatherData?.geo_status || null;
+  const geoStatusClass = ['success', 'updated', 'cached'].includes(geoStatus?.status)
+    ? 'good'
+    : geoStatus?.status === 'fallback'
+      ? 'warn'
+      : geoStatus?.status
+        ? 'danger'
+        : 'aqua';
+  const geoStatusDetail = geoStatus?.error || geoStatus?.reason || (
+    geoStatus?.status === 'missing_location' ? 'Add project or profile latitude/longitude.' : ''
+  );
 
   return (
     <section className="panel weather-panel">
@@ -2106,6 +2140,8 @@ function WeatherPanel({ weatherData, loading, onPredict, onGeoWeather, onTrain }
         <span className={`pill ${modelSource === 'transformer' ? 'good' : 'aqua'}`}>{title(modelSource)}</span>
         <span>{prediction?.model_status || 'No weather model run yet'}</span>
         <span>{sampleCount === undefined ? 'Waiting for sensor samples' : `${sampleCount} sensor samples used`}</span>
+        {geoStatus?.status && <span className={`pill ${geoStatusClass}`}>Geo {title(geoStatus.status)}</span>}
+        {geoStatusDetail && <span>{shortText(geoStatusDetail, 90)}</span>}
         {rawPrediction.transformer_model_file_exists === false && <span>Transformer file missing</span>}
       </div>
 
@@ -2149,8 +2185,8 @@ function WeatherPanel({ weatherData, loading, onPredict, onGeoWeather, onTrain }
             <small>{format(item.min_temperature)} C min</small>
             <small>{format(item.rainfall)} mm rain</small>
           </article>
-        ))}
-        {!geoDaily.length && <p className="muted">No geolocation daily weather saved yet.</p>}
+        ))} 
+        {!geoDaily.length && <p className="muted">{geoStatus?.status === 'missing_location' ? 'Add project latitude/longitude, then sync location weather.' : 'No geolocation daily weather saved yet.'}</p>}
       </div>
 
       <div className="table-wrap weather-history">

@@ -11,10 +11,12 @@ services:
       - key: NODE_VERSION
         value: 22.16.0
       - key: DISEASE_MODEL_PRELOAD
-        value: "true"
+        value: "false"
       - key: DISEASE_MODEL_PRELOAD_DELAY
-        value: "2"
+        value: "15"
       - key: WEATHER_MODEL_ENABLED
+        value: "true"
+      - key: WEATHER_TRANSFORMER_SUBPROCESS
         value: "true"
       - key: WEATHER_TRANSFORMER_TIMEOUT_SECONDS
         value: "12"

@@ -734,37 +734,87 @@ select { appearance: none; }
 }
 
 .control-panel {
-  min-height: 430px;
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 14px;
 }
 
 .control-list {
   display: grid;
-  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .control-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
   gap: 12px;
-  min-height: 72px;
-  padding: 12px;
+  min-height: 132px;
+  padding: 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #fbfcfa;
+  background: linear-gradient(180deg, #ffffff 0%, #f7faf8 100%);
+  box-shadow: 0 10px 24px rgba(23, 33, 28, 0.06);
 }
 
 .control-row strong {
-  display: block;
-  margin-top: 4px;
-  color: var(--deep);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  margin-top: 7px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  color: #fff;
+  background: #697870;
+}
+
+.control-copy {
+  min-width: 0;
+}
+
+.control-row .relay-on {
+  background: var(--green);
+}
+
+.control-row .relay-off {
+  background: #697870;
 }
 
 .button-pair {
-  gap: 7px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
 }
 
-.button-pair button,
+.button-pair button {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--deep);
+  transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+}
+
+.button-pair button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(23, 33, 28, 0.08);
+}
+
+.button-pair button.selected {
+  background: var(--deep);
+  color: #fff;
+  border-color: var(--deep);
+}
+
+.button-pair button.off.selected {
+  background: #697870;
+  border-color: #697870;
+}
+
 .table-actions button {
   width: 38px;
   height: 38px;
@@ -774,7 +824,6 @@ select { appearance: none; }
   color: #fff;
 }
 
-.button-pair button:last-child,
 .table-actions button:nth-child(2) {
   background: #6b766f;
 }
@@ -786,6 +835,11 @@ select { appearance: none; }
 .toggle-row {
   gap: 10px;
   margin: 16px 0;
+  min-height: 48px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
   font-weight: 900;
 }
 
@@ -798,6 +852,10 @@ select { appearance: none; }
   display: grid;
   gap: 8px;
   margin: 13px 0 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
 }
 
 .range-control span {
@@ -1331,6 +1389,10 @@ th {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .control-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .launch-copy {
     min-height: auto;
     grid-column: 1 / -1;
@@ -1398,6 +1460,10 @@ th {
   .feature-strip,
   .score-grid,
   .visual-glass {
+    grid-template-columns: 1fr;
+  }
+
+  .control-list {
     grid-template-columns: 1fr;
   }
 

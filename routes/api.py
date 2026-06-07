@@ -11,6 +11,7 @@ from models import (
 )
 from datetime import datetime, timedelta
 import json
+import math
 import os
 from pathlib import Path
 from functools import wraps
@@ -395,9 +396,18 @@ def user_profile():
     user.profile_notes = clean_text(data.get('profile_notes') or data.get('profileNotes')) or None
     user.farm_name = clean_text(data.get('farm_name') or data.get('farmName')) or user.farm_name
     user.plant_type = clean_text(data.get('plant_type') or data.get('plantType')) or user.plant_type
-    user.farm_size = number_or_none(data.get('farm_size') or data.get('farmSize')) or user.farm_size
-    user.farm_location_lat = number_or_none(data.get('farm_location_lat') or data.get('latitude')) or user.farm_location_lat
-    user.farm_location_lon = number_or_none(data.get('farm_location_lon') or data.get('longitude')) or user.farm_location_lon
+    farm_size_value = data.get('farm_size') if data.get('farm_size') is not None else data.get('farmSize')
+    latitude_value = data.get('farm_location_lat') if data.get('farm_location_lat') is not None else data.get('latitude')
+    longitude_value = data.get('farm_location_lon') if data.get('farm_location_lon') is not None else data.get('longitude')
+    farm_size = number_or_none(farm_size_value)
+    latitude = number_or_none(latitude_value)
+    longitude = number_or_none(longitude_value)
+    if farm_size is not None:
+        user.farm_size = farm_size
+    if latitude is not None:
+        user.farm_location_lat = latitude
+    if longitude is not None:
+        user.farm_location_lon = longitude
     user.updated_at = datetime.utcnow()
 
     db.session.commit()
@@ -1325,10 +1335,12 @@ def get_weather_records(device_id):
             return jsonify({'error': 'Login or valid device API key required'}), 401
 
         user = User.query.get(device.user_id)
+        geo_result = None
         if os.environ.get('WEATHER_GEO_AUTOSYNC', 'true').lower() not in {'0', 'false', 'no', 'off'}:
             try:
-                create_geo_weather_records(user, device, force=False)
+                geo_result = create_geo_weather_records(user, device, force=False)
             except Exception as exc:
+                geo_result = {'status': 'error', 'error': str(exc)}
                 current_app.logger.debug("Geo weather autosync skipped: %s", exc)
 
         limit = request.args.get('limit', 24, type=int)
@@ -1347,6 +1359,7 @@ def get_weather_records(device_id):
             'latest_realtime': latest_realtime.to_dict() if latest_realtime else None,
             'latest_geo_daily': daily_records[0].to_dict() if daily_records else None,
             'daily_records': [record.to_dict() for record in daily_records[:7]],
+            'geo_status': geo_result,
             'latest_training_run': training.to_dict() if training else None,
             'latest_training': training.to_dict() if training else None,
         }), 200
@@ -2107,24 +2120,34 @@ def latest_project_for_user(user):
     return Project.query.filter_by(user_id=user.id).order_by(Project.updated_at.desc()).first()
 
 
-def weather_location(user, device=None, project=None):
-    lat = None
-    lon = None
-    if project:
-        lat = project.latitude
-        lon = project.longitude
-    if (lat is None or lon is None) and user:
-        lat = user.farm_location_lat
-        lon = user.farm_location_lon
-    if (lat is None or lon is None) and device:
-        lat = device.device_location_lat
-        lon = device.device_location_lon
-
+def valid_location_pair(lat, lon):
     lat = number_or_none(lat)
     lon = number_or_none(lon)
     if lat is None or lon is None:
         return None
+    if not math.isfinite(lat) or not math.isfinite(lon):
+        return None
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        return None
+    if abs(lat) < 0.0001 and abs(lon) < 0.0001:
+        return None
     return lat, lon
+
+
+def weather_location(user, device=None, project=None):
+    candidates = []
+    if project:
+        candidates.append((project.latitude, project.longitude))
+    if user:
+        candidates.append((user.farm_location_lat, user.farm_location_lon))
+    if device:
+        candidates.append((device.device_location_lat, device.device_location_lon))
+
+    for lat, lon in candidates:
+        location = valid_location_pair(lat, lon)
+        if location:
+            return location
+    return None
 
 
 def parse_forecast_date(value):
@@ -2144,12 +2167,107 @@ def daily_value(daily, key, index):
     return number_or_none(values[index])
 
 
+def local_geo_weather_values(latitude, longitude, day_index=0):
+    day = datetime.utcnow() + timedelta(days=day_index)
+    seasonal = 0.5 + 0.5 * math.sin(((day.timetuple().tm_yday - 82) / 365) * math.tau)
+    latitude_cool = min(18, abs(latitude) * 0.18)
+    base = 29 - latitude_cool + seasonal * 7
+    coastal_moisture = max(0, 1 - min(abs(longitude) / 180, 1))
+    rain = max(0, 2 + coastal_moisture * 7 + (0.5 - seasonal) * 5 + (day_index % 3) * 1.6)
+    humidity = max(35, min(92, 52 + coastal_moisture * 22 + rain * 1.2))
+    return {
+        'max_temperature': round(base + 2.8, 2),
+        'min_temperature': round(base - 5.4, 2),
+        'apparent_temperature': round(base + (humidity - 55) / 28, 2),
+        'humidity': round(humidity, 2),
+        'pressure': round(1013.25 - (base - 22) * 0.25, 2),
+        'rainfall': round(rain, 2),
+    }
+
+
+def create_geo_fallback_weather_records(user, device, project, location, reason='open_meteo_unavailable'):
+    latitude, longitude = location
+    now = datetime.utcnow()
+    saved = []
+    current_values = local_geo_weather_values(latitude, longitude, 0)
+    current_record = WeatherRecord(
+        user_id=user.id,
+        device_id=device.device_id,
+        project_id=project.id if project else None,
+        source='geo_realtime',
+        horizon_minutes=0,
+        max_temperature=current_values['max_temperature'],
+        min_temperature=current_values['min_temperature'],
+        apparent_temperature=current_values['apparent_temperature'],
+        humidity=current_values['humidity'],
+        pressure=current_values['pressure'],
+        rainfall=current_values['rainfall'],
+        confidence=58,
+        model_status='local_geo_weather_fallback',
+        raw_payload=json.dumps({
+            'provider': 'local_geo_fallback',
+            'reason': reason,
+            'location': {'latitude': latitude, 'longitude': longitude}
+        }),
+        agent_summary='Local geolocation weather fallback saved because live weather API was unavailable.',
+        forecast_for=now,
+        created_at=now
+    )
+    db.session.add(current_record)
+    saved.append(current_record)
+
+    for day_index in range(7):
+        values = local_geo_weather_values(latitude, longitude, day_index)
+        forecast_for = (now + timedelta(days=day_index)).replace(hour=0, minute=0, second=0, microsecond=0)
+        day_start = forecast_for
+        existing = WeatherRecord.query.filter(
+            WeatherRecord.user_id == user.id,
+            WeatherRecord.device_id == device.device_id,
+            WeatherRecord.source == 'geo_daily',
+            WeatherRecord.forecast_for >= day_start,
+            WeatherRecord.forecast_for < day_start + timedelta(days=1)
+        ).first()
+        record = existing or WeatherRecord(
+            user_id=user.id,
+            device_id=device.device_id,
+            project_id=project.id if project else None,
+            source='geo_daily',
+            forecast_for=forecast_for
+        )
+        record.horizon_minutes = max(0, int((forecast_for - now).total_seconds() // 60))
+        record.max_temperature = values['max_temperature']
+        record.min_temperature = values['min_temperature']
+        record.apparent_temperature = values['apparent_temperature']
+        record.humidity = values['humidity']
+        record.pressure = values['pressure']
+        record.rainfall = values['rainfall']
+        record.confidence = 58
+        record.model_status = 'local_geo_daily_fallback'
+        record.raw_payload = json.dumps({
+            'provider': 'local_geo_fallback',
+            'reason': reason,
+            'location': {'latitude': latitude, 'longitude': longitude}
+        })
+        record.agent_summary = f'Local geo fallback for {forecast_for.date()}: max {record.max_temperature} C, min {record.min_temperature} C, rainfall {record.rainfall} mm.'
+        record.created_at = now
+        if not existing:
+            db.session.add(record)
+        saved.append(record)
+
+    db.session.commit()
+    mirror_weather_records_async(current_app._get_current_object(), [record.id for record in saved])
+    return {
+        'status': 'fallback',
+        'reason': reason,
+        'location': {'latitude': latitude, 'longitude': longitude},
+        'records': [record.to_dict() for record in saved]
+    }
+
+
 def create_geo_weather_records(user, device, force=False):
     """Fetch Open-Meteo current/daily weather for the farm location and save DB rows."""
     if not user or not device:
         return {'status': 'missing_user_or_device', 'records': []}
-    if requests is None:
-        return {'status': 'requests_unavailable', 'records': []}
 
     project = latest_project_for_user(user)
     location = weather_location(user, device, project)
@@ -2169,6 +2287,9 @@ def create_geo_weather_records(user, device, force=False):
             'records': [record.to_dict() for record in latest_geo]
         }
 
+    if requests is None:
+        return create_geo_fallback_weather_records(user, device, project, location, reason='requests_unavailable')
+
     latitude, longitude = location
     params = {
         'latitude': latitude,
@@ -2179,13 +2300,18 @@ def create_geo_weather_records(user, device, force=False):
         'forecast_days': 7
     }
 
-    response = requests.get(
-        'https://api.open-meteo.com/v1/forecast',
-        params=params,
-        timeout=float(os.environ.get('GEO_WEATHER_TIMEOUT_SECONDS', '8'))
-    )
-    response.raise_for_status()
-    payload = response.json()
+    try:
+        response = requests.get(
+            'https://api.open-meteo.com/v1/forecast',
+            params=params,
+            timeout=float(os.environ.get('GEO_WEATHER_TIMEOUT_SECONDS', '8')),
+            headers={'User-Agent': 'NuroAgro/1.0 weather-sync'}
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except Exception as exc:
+        current_app.logger.warning("Open-Meteo geo weather failed; using local fallback: %s", exc)
+        return create_geo_fallback_weather_records(user, device, project, location, reason=str(exc)[:180])
     saved = []
     now = datetime.utcnow()
 
