@@ -4,12 +4,15 @@
 """
 
 import os
+from tempfile import gettempdir
+
 IS_VERCEL = bool(os.environ.get('VERCEL') or os.environ.get('VERCEL_ENV'))
 IS_RENDER = bool(os.environ.get('RENDER') or os.environ.get('RENDER_SERVICE_ID'))
 IS_CLOUD_RUNTIME = IS_VERCEL or IS_RENDER
+CLOUD_TMP_DIR = gettempdir()
 if IS_CLOUD_RUNTIME:
-    os.environ.setdefault('YOLO_CONFIG_DIR', '/tmp/yolo_config')
-    os.environ.setdefault('WEATHER_CALIBRATION_PATH', '/tmp/nuroagro_weather_calibration.json')
+    os.environ.setdefault('YOLO_CONFIG_DIR', os.path.join(CLOUD_TMP_DIR, 'yolo_config'))
+    os.environ.setdefault('WEATHER_CALIBRATION_PATH', os.path.join(CLOUD_TMP_DIR, 'nuroagro_weather_calibration.json'))
 else:
     os.environ.setdefault('YOLO_CONFIG_DIR', os.path.join(os.getcwd(), 'static', 'yolo_config'))
 
@@ -33,6 +36,7 @@ from models import (
 from routes.api import api_bp
 from routes.api import (
     analyze_location_for_farming,
+    configured_disease_service_url,
     create_notification,
     create_user_device,
     mirror_device,
@@ -55,16 +59,17 @@ def normalize_database_url(url):
 
 
 database_url = normalize_database_url(os.environ.get('DATABASE_URL'))
+cloud_sqlite_url = f"sqlite:///{os.path.join(CLOUD_TMP_DIR, 'nuroagro_vertical_farming.db')}"
 
 # Configuration
-app.config['SQLALCHEMY_DATABASE_URI'] = database_url or ('sqlite:////tmp/nuroagro_vertical_farming.db' if IS_CLOUD_RUNTIME else 'sqlite:///vertical_farming.db')
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url or (cloud_sqlite_url if IS_CLOUD_RUNTIME else 'sqlite:///vertical_farming.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'nuroagro-dev-secret-change-in-production')
 app.config['SESSION_TYPE'] = 'filesystem'
-app.config['SESSION_FILE_DIR'] = os.environ.get('SESSION_FILE_DIR') or ('/tmp/nuroagro_flask_session' if IS_CLOUD_RUNTIME else 'flask_session')
+app.config['SESSION_FILE_DIR'] = os.environ.get('SESSION_FILE_DIR') or (os.path.join(CLOUD_TMP_DIR, 'nuroagro_flask_session') if IS_CLOUD_RUNTIME else 'flask_session')
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_SECURE'] = os.environ.get('SESSION_COOKIE_SECURE', 'false').lower() == 'true'
-app.config['UPLOAD_FOLDER'] = os.environ.get('UPLOAD_FOLDER') or ('/tmp/nuroagro_uploads' if IS_CLOUD_RUNTIME else 'static/uploads/')
+app.config['UPLOAD_FOLDER'] = os.environ.get('UPLOAD_FOLDER') or (os.path.join(CLOUD_TMP_DIR, 'nuroagro_uploads') if IS_CLOUD_RUNTIME else 'static/uploads/')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 app.config['DEVICE_API_KEY'] = os.environ.get('DEVICE_API_KEY', 'farm-device-key')
 app.config['ADMIN_PASSWORD'] = os.environ.get('ADMIN_PASSWORD', app.config['SECRET_KEY'])
@@ -115,7 +120,7 @@ logger = logging.getLogger(__name__)
 os.makedirs(app.config['SESSION_FILE_DIR'], exist_ok=True)
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'disease_images'), exist_ok=True)
-os.makedirs(os.environ.get('YOLO_CONFIG_DIR', '/tmp/yolo_config' if IS_CLOUD_RUNTIME else os.path.join(os.getcwd(), 'static', 'yolo_config')), exist_ok=True)
+os.makedirs(os.environ.get('YOLO_CONFIG_DIR', os.path.join(CLOUD_TMP_DIR, 'yolo_config') if IS_CLOUD_RUNTIME else os.path.join(os.getcwd(), 'static', 'yolo_config')), exist_ok=True)
 
 model = None
 model_load_error = None
@@ -142,8 +147,8 @@ def load_yolo_model():
 def warm_disease_model_async():
     """Load the disease model after startup so the first scan is not cold."""
     global model_preload_started
-    if os.environ.get('DISEASE_SERVICE_URL', '').strip():
-        logger.info("Skipping local YOLO preload because DISEASE_SERVICE_URL is configured")
+    if configured_disease_service_url():
+        logger.info("Skipping local YOLO preload because the Disease API is configured")
         return
 
     preload_default = 'true' if IS_CLOUD_RUNTIME else 'false'

@@ -44,9 +44,9 @@ npm start
 
 If the browser does not open automatically, open the URL printed in the terminal.
 
-## Separate Disease Detection API
+## Disease Detection API
 
-The YOLO model can run as its own Flask service so the main NeuroAgro app stays lighter and does not need to load PyTorch in the web process.
+The YOLO model runs best as its own Flask API so the main NeuroAgro app stays lighter and calls disease detection only when a leaf image is uploaded.
 
 ```powershell
 npm run disease:dev
@@ -59,7 +59,7 @@ DISEASE_SERVICE_URL=http://127.0.0.1:5055
 DISEASE_SERVICE_API_KEY=change-this-shared-key
 ```
 
-Deploy the service from `disease_service/` with `gunicorn "disease_service.app:create_app()" --bind 0.0.0.0:$PORT --workers 1 --timeout 180`. If `DISEASE_SERVICE_URL` is empty, the main Flask app uses the local fallback worker.
+For local development, `http://127.0.0.1:5055` is correct only when `npm run disease:dev` is running on the same computer.
 
 Demo account:
 
@@ -84,7 +84,10 @@ For wiring and hardware assembly, start with `PIN_DIAGRAM.md`.
 
 ## Render Deployment
 
-This repository includes `render.yaml` for a Render Python web service.
+This repository includes `render.yaml` for a two-service Render deployment:
+
+- `nuroagro`: the public Flask + React web app.
+- `nuroagro-disease-api`: a private Flask service that runs YOLO disease detection.
 
 Render build command:
 
@@ -107,7 +110,9 @@ git commit -m "Prepare NuroAgro for Render deployment"
 git push
 ```
 
-In Render, create a Blueprint from this repo or create a Python Web Service manually using the commands above. Set `DEVICE_API_KEY` and `ADMIN_PASSWORD` in Render, then use the same `DEVICE_API_KEY` in `esp32_firmware/main.ino`.
+In Render, create a Blueprint from this repo. Set `DEVICE_API_KEY` and `ADMIN_PASSWORD` when prompted, then use the same `DEVICE_API_KEY` in `esp32_firmware/main.ino`.
+
+Do not set `DISEASE_SERVICE_URL` to `http://127.0.0.1:5055` or `localhost` on Render. `127.0.0.1` inside Render points at one container, not the separate Disease API. The blueprint passes the private disease-service hostname to NeuroAgro with `DISEASE_SERVICE_HOST`, `DISEASE_SERVICE_PORT=5055`, and a shared generated `DISEASE_SERVICE_API_KEY`.
 
 Production defaults keep the app ready for product demos:
 
@@ -115,9 +120,9 @@ Production defaults keep the app ready for product demos:
 - `WEATHER_TRANSFORMER_TIMEOUT_SECONDS=12` records fallback status if the Transformer path is too slow or unavailable.
 - `WEATHER_GEO_AUTOSYNC=true` saves Open-Meteo current and daily weather by project/user coordinates.
 - `GEO_WEATHER_TIMEOUT_SECONDS=8` keeps geolocation weather sync from blocking the app too long.
-- `DISEASE_MODEL_PRELOAD=true` warms YOLO after startup so the first scan is smoother.
+- `DISEASE_SERVICE_REQUIRED=true` makes Render use the private Disease API instead of silently falling back to in-process YOLO.
 - `DISEASE_MAX_ANALYSIS_EDGE=960` and `DISEASE_YOLO_IMGSZ=512` keep disease scans responsive.
-- `DISEASE_INFERENCE_SUBPROCESS=true` isolates YOLO/PyTorch from Flask so a bad scan cannot crash the web app.
+- `DISEASE_INFERENCE_SUBPROCESS=false` on the private Disease API keeps the YOLO model cached in that service worker for faster scans.
 - `DISEASE_INFERENCE_TIMEOUT_SECONDS=110` returns a clean UI error if a scan stalls too long.
 - `DISEASE_CONFIDENCE_THRESHOLD=0.20` matches the supplied `best.pt` model, whose valid disease boxes often score around 20-40%.
 - `DISEASE_POSSIBLE_CONFIDENCE_THRESHOLD=0.12` keeps very weak disease evidence visible as "possible" instead of silently reporting healthy.

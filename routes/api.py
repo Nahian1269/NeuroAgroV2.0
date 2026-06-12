@@ -18,6 +18,7 @@ from pathlib import Path
 from functools import wraps
 from threading import Thread
 from time import perf_counter
+from urllib.parse import urlparse
 # Lazy import disease_ml to avoid numpy/cv2 blocking during app startup
 def _get_disease_functions():
     """Lazy load disease ML functions on first use."""
@@ -146,12 +147,80 @@ def disease_detected(name, confidence):
     return bool(name) and str(name).strip().lower() not in {'healthy', 'background'} and (confidence or 0) >= 20
 
 
+def is_cloud_runtime():
+    return bool(os.environ.get('RENDER') or os.environ.get('RENDER_SERVICE_ID') or os.environ.get('VERCEL') or os.environ.get('VERCEL_ENV'))
+
+
+def is_loopback_host(hostname):
+    return (hostname or '').lower() in {'127.0.0.1', 'localhost', '0.0.0.0', '::1'}
+
+
+def loopback_service_allowed():
+    return os.environ.get('ALLOW_LOOPBACK_DISEASE_SERVICE', '').lower() in {'1', 'true', 'yes', 'on'}
+
+
+def disease_service_required():
+    return os.environ.get('DISEASE_SERVICE_REQUIRED', '').lower() in {'1', 'true', 'yes', 'on'}
+
+
+def normalize_disease_service_url(raw_url):
+    url = (raw_url or '').strip()
+    if not url:
+        return ''
+    parsed = urlparse(url)
+    if parsed.scheme and parsed.netloc:
+        return url.rstrip('/')
+    return f"http://{url}".rstrip('/')
+
+
 def configured_disease_service_url():
     """Return the external disease service URL when remote inference is enabled."""
     raw_url = (os.environ.get('DISEASE_SERVICE_URL') or '').strip()
-    if not raw_url:
+    service_host = (os.environ.get('DISEASE_SERVICE_HOST') or '').strip()
+    service_hostport = (os.environ.get('DISEASE_SERVICE_HOSTPORT') or '').strip()
+    service_port = (os.environ.get('DISEASE_SERVICE_PORT') or '5055').strip()
+    service_scheme = (os.environ.get('DISEASE_SERVICE_SCHEME') or 'http').strip() or 'http'
+
+    if raw_url:
+        candidate_url = normalize_disease_service_url(raw_url)
+        parsed = urlparse(candidate_url)
+        hostname = (parsed.hostname or '').lower()
+        if not (is_cloud_runtime() and is_loopback_host(hostname) and not loopback_service_allowed()):
+            return candidate_url
+        try:
+            current_app.logger.warning(
+                "Ignoring loopback DISEASE_SERVICE_URL=%s in cloud runtime.",
+                candidate_url,
+            )
+        except RuntimeError:
+            pass
+
+    if service_hostport:
+        candidate_url = normalize_disease_service_url(service_hostport)
+    elif service_host:
+        host = service_host
+        if '://' in host:
+            candidate_url = normalize_disease_service_url(host)
+        elif ':' in host:
+            candidate_url = f"{service_scheme}://{host}".rstrip('/')
+        else:
+            candidate_url = f"{service_scheme}://{host}:{service_port}".rstrip('/')
+    else:
         return ''
-    return raw_url.rstrip('/')
+
+    parsed = urlparse(candidate_url)
+    hostname = (parsed.hostname or '').lower()
+    if is_cloud_runtime() and is_loopback_host(hostname):
+        if not loopback_service_allowed():
+            try:
+                current_app.logger.warning(
+                    "Ignoring loopback disease service endpoint %s in cloud runtime.",
+                    candidate_url,
+                )
+            except RuntimeError:
+                pass
+            return ''
+    return candidate_url
 
 
 def save_remote_annotated_image(image_path, payload):
@@ -180,6 +249,8 @@ def analyze_image_with_disease_service(image_path):
 
     service_url = configured_disease_service_url()
     if not service_url:
+        if disease_service_required():
+            return {'error': 'Disease API is required but not configured.', 'primary_disease': None, 'confidence': 0, 'detections': {}, 'boxes': []}
         return None
 
     endpoint = f"{service_url}/api/analyze"
@@ -204,6 +275,12 @@ def analyze_image_with_disease_service(image_path):
         if response.status_code >= 400:
             payload.setdefault('error', f'Disease service failed with HTTP {response.status_code}.')
         return save_remote_annotated_image(image_path, payload)
+    except requests.exceptions.RequestException as exc:
+        if disease_service_required():
+            current_app.logger.error("Required disease API is unavailable: %s", exc)
+            return {'error': f'Disease API unavailable: {exc}', 'primary_disease': None, 'confidence': 0, 'detections': {}, 'boxes': []}
+        current_app.logger.warning("Disease service unavailable; falling back to local analyzer: %s", exc)
+        return None
     except Exception as exc:
         current_app.logger.error("Disease service request failed: %s", exc)
         return {'error': f'Disease service unavailable: {exc}', 'primary_disease': None, 'confidence': 0, 'detections': {}, 'boxes': []}
@@ -2805,11 +2882,4 @@ def mirror_weather_training_run(run):
     payload['local_id'] = run.id
     payload['details'] = json.loads(run.details) if run.details else None
     insert_record('weather_training_runs', payload, current_app.logger)
-
-
-
-
-
-
-
 

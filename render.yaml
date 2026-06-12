@@ -1,3 +1,9 @@
+envVarGroups:
+  - name: nuroagro-disease-shared
+    envVars:
+      - key: DISEASE_SERVICE_API_KEY
+        generateValue: true
+
 services:
   - type: web
     name: nuroagro
@@ -6,10 +12,24 @@ services:
     startCommand: gunicorn "app_iot:create_app()" --bind 0.0.0.0:$PORT --workers 1 --timeout 180
     healthCheckPath: /api/health
     envVars:
+      - fromGroup: nuroagro-disease-shared
       - key: PYTHON_VERSION
         value: 3.11.11
       - key: NODE_VERSION
         value: 22.16.0
+      - key: DISEASE_SERVICE_HOST
+        fromService:
+          name: nuroagro-disease-api
+          type: pserv
+          property: host
+      - key: DISEASE_SERVICE_PORT
+        value: "5055"
+      - key: DISEASE_SERVICE_SCHEME
+        value: http
+      - key: DISEASE_SERVICE_TIMEOUT_SECONDS
+        value: "140"
+      - key: DISEASE_SERVICE_REQUIRED
+        value: "true"
       - key: DISEASE_MODEL_PRELOAD
         value: "false"
       - key: DISEASE_MODEL_PRELOAD_DELAY
@@ -48,3 +68,33 @@ services:
         sync: false
       - key: ADMIN_PASSWORD
         sync: false
+
+  - type: pserv
+    name: nuroagro-disease-api
+    runtime: python
+    buildCommand: pip install -r disease_service/requirements.txt
+    startCommand: gunicorn "disease_service.app:create_app()" --bind 0.0.0.0:5055 --workers 1 --timeout 180
+    envVars:
+      - fromGroup: nuroagro-disease-shared
+      - key: PYTHON_VERSION
+        value: 3.11.11
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: DISEASE_SERVICE_PORT
+        value: "5055"
+      - key: DISEASE_MODEL_PATH
+        value: best.pt
+      - key: DISEASE_CONFIDENCE_THRESHOLD
+        value: "0.20"
+      - key: DISEASE_POSSIBLE_CONFIDENCE_THRESHOLD
+        value: "0.12"
+      - key: DISEASE_MAX_ANALYSIS_EDGE
+        value: "960"
+      - key: DISEASE_YOLO_IMGSZ
+        value: "512"
+      - key: DISEASE_INFERENCE_SUBPROCESS
+        value: "false"
+      - key: DISEASE_INFERENCE_TIMEOUT_SECONDS
+        value: "140"
+      - key: LOG_LEVEL
+        value: "INFO"
