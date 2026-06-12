@@ -129,7 +129,13 @@ async function startBackend(targetPort) {
   console.log(`Starting NuroAgro backend at ${appUrl}...`);
   backend = spawn(python, ['run_iot.py'], {
     cwd: root,
-    env: { ...process.env, IOT_APP_PORT: String(port) },
+    env: {
+      ...process.env,
+      IOT_APP_PORT: String(port),
+      DISEASE_SERVICE_URL: process.env.DISEASE_SERVICE_URL || 'http://127.0.0.1:5055',
+      DISEASE_SERVICE_TIMEOUT_SECONDS: process.env.DISEASE_SERVICE_TIMEOUT_SECONDS || '75',
+      DISEASE_MODEL_PRELOAD: process.env.DISEASE_MODEL_PRELOAD || 'false',
+    },
     stdio: 'inherit',
   });
 

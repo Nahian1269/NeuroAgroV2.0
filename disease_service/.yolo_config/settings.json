@@ -1,0 +1,20 @@
+{
+  "settings_version": "0.0.6",
+  "datasets_dir": "G:\\iMAGE PROCESSING PART\\datasets",
+  "weights_dir": "G:\\iMAGE PROCESSING PART\\NeuroAgroV2.0\\weights",
+  "runs_dir": "G:\\iMAGE PROCESSING PART\\NeuroAgroV2.0\\runs",
+  "uuid": "33ae3bbe9e2b85139e468d20cf7c67f6922514ac55d7ad82c0c51fd706960f3c",
+  "sync": true,
+  "api_key": "",
+  "openai_api_key": "",
+  "clearml": true,
+  "comet": true,
+  "dvc": true,
+  "hub": true,
+  "mlflow": true,
+  "neptune": true,
+  "raytune": true,
+  "tensorboard": true,
+  "wandb": false,
+  "vscode_msg": true
+}

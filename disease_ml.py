@@ -8,6 +8,9 @@ import sys
 from pathlib import Path
 from threading import Lock
 
+os.environ.setdefault('OMP_NUM_THREADS', '1')
+os.environ.setdefault('MKL_NUM_THREADS', '1')
+os.environ.setdefault('NUMEXPR_NUM_THREADS', '1')
 os.environ.setdefault('YOLO_CONFIG_DIR', os.environ.get('YOLO_CONFIG_DIR', os.path.join(os.getcwd(), 'static', 'yolo_config')))
 
 try:
@@ -40,14 +43,24 @@ CLASS_STYLES = {
 
 DEFAULT_STYLE = {'bgr': (80, 80, 80), 'hex': '#505050'}
 HEALTHY_CLASSES = {'healthy', 'background'}
-MAX_ANALYSIS_EDGE = int(os.environ.get('DISEASE_MAX_ANALYSIS_EDGE', '960'))
-YOLO_IMAGE_SIZE = int(os.environ.get('DISEASE_YOLO_IMGSZ', '512'))
+MAX_ANALYSIS_EDGE = int(os.environ.get('DISEASE_MAX_ANALYSIS_EDGE', '640'))
+YOLO_IMAGE_SIZE = int(os.environ.get('DISEASE_YOLO_IMGSZ', '320'))
+YOLO_MAX_DETECTIONS = int(os.environ.get('DISEASE_YOLO_MAX_DETECTIONS', '20'))
+YOLO_DEVICE = os.environ.get('DISEASE_YOLO_DEVICE', 'cpu')
 CONFIDENCE_THRESHOLD = float(os.environ.get('DISEASE_CONFIDENCE_THRESHOLD', '0.20'))
 POSSIBLE_CONFIDENCE_THRESHOLD = float(os.environ.get('DISEASE_POSSIBLE_CONFIDENCE_THRESHOLD', '0.12'))
 HEALTHY_CONFIDENCE = float(os.environ.get('DISEASE_HEALTHY_CONFIDENCE', '0.0'))
-INFERENCE_TIMEOUT_SECONDS = float(os.environ.get('DISEASE_INFERENCE_TIMEOUT_SECONDS', '110'))
+INFERENCE_TIMEOUT_SECONDS = float(os.environ.get('DISEASE_INFERENCE_TIMEOUT_SECONDS', '60'))
 _MODEL_CACHE = None
 _MODEL_LOCK = Lock()
+
+try:
+    from PIL import Image, ImageStat
+    PIL_IMPORT_ERROR = None
+except Exception as exc:
+    Image = None
+    ImageStat = None
+    PIL_IMPORT_ERROR = str(exc)
 
 
 def load_model(model_path='best.pt'):
@@ -57,7 +70,12 @@ def load_model(model_path='best.pt'):
         with _MODEL_LOCK:
             if _MODEL_CACHE is None:
                 from ultralytics import YOLO
-                _MODEL_CACHE = YOLO(model_path)
+                _MODEL_CACHE = YOLO(model_path, task='detect')
+                try:
+                    import torch
+                    torch.set_num_threads(max(1, int(os.environ.get('DISEASE_TORCH_THREADS', '1'))))
+                except Exception:
+                    pass
     return _MODEL_CACHE
 
 
@@ -179,6 +197,101 @@ def generate_disease_recommendations(disease, confidence=0):
     ])
 
 
+def analyze_image_with_visual_fallback(image_path, logger=None, reason=None):
+    """Return a fast, conservative image-health estimate when YOLO is unavailable."""
+    if Image is None:
+        return {
+            'error': f'Fallback image analyzer is unavailable: {PIL_IMPORT_ERROR}',
+            'primary_disease': None,
+            'confidence': 0,
+            'detections': {},
+            'boxes': [],
+            'recommendations': []
+        }
+
+    try:
+        with Image.open(image_path) as source:
+            image = source.convert('RGB')
+            image.thumbnail((360, 360))
+            stat = ImageStat.Stat(image)
+            mean_r, mean_g, mean_b = stat.mean
+            pixels = list(image.getdata())
+    except Exception as exc:
+        return {
+            'error': f'Could not inspect image: {exc}',
+            'primary_disease': None,
+            'confidence': 0,
+            'detections': {},
+            'boxes': [],
+            'recommendations': []
+        }
+
+    total = max(1, len(pixels))
+    yellow_brown = 0
+    dark_spots = 0
+    pale = 0
+    green = 0
+    for red, green_value, blue in pixels:
+        if green_value > red * 0.86 and green_value > blue * 1.08 and green_value > 45:
+            green += 1
+        if red > 92 and green_value > 70 and blue < 90 and red >= green_value * 0.78:
+            yellow_brown += 1
+        if red < 85 and green_value < 85 and blue < 85:
+            dark_spots += 1
+        if red > 150 and green_value > 140 and blue > 105:
+            pale += 1
+
+    ratios = {
+        'yellow_brown': yellow_brown / total,
+        'dark_spots': dark_spots / total,
+        'pale': pale / total,
+        'green': green / total,
+    }
+    likely_issue_score = min(0.92, ratios['yellow_brown'] * 1.4 + ratios['dark_spots'] * 1.1 + ratios['pale'] * 0.45)
+    image_is_leaf_like = ratios['green'] > 0.08 or mean_g >= max(mean_r, mean_b)
+
+    if image_is_leaf_like and likely_issue_score >= 0.18:
+        disease = 'Brown spot' if ratios['yellow_brown'] >= ratios['dark_spots'] else 'Leaf Smut'
+        confidence = max(22, min(58, likely_issue_score * 100))
+        severity = severity_for(disease, confidence, 1)
+        detections = {disease: 1}
+    else:
+        disease = 'Healthy'
+        confidence = HEALTHY_CONFIDENCE
+        severity = 'Low'
+        detections = {}
+
+    recommendations = generate_disease_recommendations(disease, confidence)
+    if reason:
+        recommendations = [
+            f'YOLO analysis was not available, so this is a fast visual fallback result. Reason: {reason}',
+            'Use this as a temporary estimate and retry YOLO service analysis for a confirmed diagnosis.',
+            *recommendations
+        ]
+
+    if logger:
+        logger.warning('Disease fallback used for %s: %s', image_path, reason or 'YOLO unavailable')
+
+    return {
+        'primary_disease': disease,
+        'confidence': round(confidence, 2),
+        'detections': detections,
+        'possible_detections': {},
+        'boxes': [],
+        'discarded_low_confidence': 0,
+        'confidence_threshold': CONFIDENCE_THRESHOLD * 100,
+        'possible_confidence_threshold': POSSIBLE_CONFIDENCE_THRESHOLD * 100,
+        'severity': severity,
+        'recommendations': recommendations,
+        'original_image_path': str(image_path),
+        'original_image_url': static_url_for_path(image_path),
+        'annotated_image_path': str(image_path),
+        'annotated_image_url': static_url_for_path(image_path),
+        'fallback': True,
+        'fallback_metrics': ratios,
+    }
+
+
 def draw_label(image, x1, y1, label, color, thickness):
     font = cv2.FONT_HERSHEY_SIMPLEX
     scale = max(0.5, min(image.shape[:2]) / 1100)
@@ -275,9 +388,12 @@ def analyze_image_for_disease(image_path, model=None, logger=None):
         analysis_image,
         imgsz=YOLO_IMAGE_SIZE,
         conf=POSSIBLE_CONFIDENCE_THRESHOLD,
+        device=YOLO_DEVICE,
+        max_det=YOLO_MAX_DETECTIONS,
         verbose=False
     )[0]
     annotated_image = analysis_image.copy()
+    frame_height, frame_width = annotated_image.shape[:2]
     boxes_payload = []
     disease_counts = {}
     confidence_totals = {}
@@ -287,7 +403,7 @@ def analyze_image_for_disease(image_path, model=None, logger=None):
 
     boxes = getattr(results, 'boxes', None)
     if boxes is not None and len(boxes) > 0:
-        thickness = max(2, min(image.shape[:2]) // 320)
+        thickness = max(2, min(frame_height, frame_width) // 320)
         for xyxy, class_id, conf in zip(boxes.xyxy, boxes.cls, boxes.conf):
             class_id = int(class_id.item() if hasattr(class_id, 'item') else class_id)
             confidence = float(conf.item() if hasattr(conf, 'item') else conf)
@@ -299,10 +415,10 @@ def analyze_image_for_disease(image_path, model=None, logger=None):
             color = class_style(class_name)['bgr']
             hex_color = class_style(class_name)['hex']
             x1, y1, x2, y2 = [int(round(value)) for value in xyxy.tolist()]
-            x1 = max(0, min(x1, image.shape[1] - 1))
-            x2 = max(0, min(x2, image.shape[1] - 1))
-            y1 = max(0, min(y1, image.shape[0] - 1))
-            y2 = max(0, min(y2, image.shape[0] - 1))
+            x1 = max(0, min(x1, frame_width - 1))
+            x2 = max(0, min(x2, frame_width - 1))
+            y1 = max(0, min(y1, frame_height - 1))
+            y2 = max(0, min(y2, frame_height - 1))
 
             if is_disease and confidence < CONFIDENCE_THRESHOLD:
                 possible_disease_counts[class_name] = possible_disease_counts.get(class_name, 0) + 1
@@ -391,7 +507,7 @@ def analyze_image_for_disease(image_path, model=None, logger=None):
 
 def analyze_image_for_disease_guarded(image_path, logger=None):
     """Run YOLO in an isolated worker so inference cannot crash the Flask server."""
-    if os.environ.get('DISEASE_INFERENCE_SUBPROCESS', 'true').lower() in {'0', 'false', 'no', 'off'}:
+    if os.environ.get('DISEASE_INFERENCE_SUBPROCESS', 'false').lower() in {'0', 'false', 'no', 'off'}:
         return analyze_image_for_disease(image_path, logger=logger)
 
     env = os.environ.copy()
@@ -480,7 +596,8 @@ def analyze_image_for_disease_guarded(image_path, logger=None):
 
 def _cli_analyze_json():
     image_path = sys.argv[sys.argv.index('--analyze-json') + 1]
-    result = analyze_image_for_disease(image_path)
+    model_path = os.environ.get('DISEASE_MODEL_PATH', 'best.pt')
+    result = analyze_image_for_disease(image_path, model=load_model(model_path))
     print(json.dumps(result))
 
 

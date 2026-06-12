@@ -44,6 +44,23 @@ npm start
 
 If the browser does not open automatically, open the URL printed in the terminal.
 
+## Separate Disease Detection API
+
+The YOLO model can run as its own Flask service so the main NeuroAgro app stays lighter and does not need to load PyTorch in the web process.
+
+```powershell
+npm run disease:dev
+```
+
+Then set this in the main app environment:
+
+```text
+DISEASE_SERVICE_URL=http://127.0.0.1:5055
+DISEASE_SERVICE_API_KEY=change-this-shared-key
+```
+
+Deploy the service from `disease_service/` with `gunicorn "disease_service.app:create_app()" --bind 0.0.0.0:$PORT --workers 1 --timeout 180`. If `DISEASE_SERVICE_URL` is empty, the main Flask app uses the local fallback worker.
+
 Demo account:
 
 ```text

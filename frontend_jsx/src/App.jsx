@@ -30,6 +30,7 @@ Globe2,
   MessageCircle,
   MessageSquare,
 Microscope,
+  Moon,
   Plus,
   Power,
   RefreshCcw,
@@ -40,6 +41,7 @@ Settings,
   ShieldCheck,
   SlidersHorizontal,
   Sprout,
+  Sun,
   Thermometer,
   Trash2,
   Upload,
@@ -51,6 +53,7 @@ Settings,
   Wind,
   Zap
 } from 'lucide-react';
+import appLogo from './assets/Picture1.png';
 
 const LOCAL_BACKEND_BASE = 'http://127.0.0.1:5001';
 
@@ -146,6 +149,9 @@ const cropOptions = ['Lettuce', 'Basil', 'Spinach', 'Tomato', 'Strawberry', 'Pak
 const fishOptions = ['Tilapia fry', 'Guppy', 'Molly', 'Zebra danio', 'Goldfish juveniles'];
 const systemOptions = ['hydroponic', 'aquaponic', 'aeroponic', 'hybrid', 'soil'];
 const modeOptions = ['hybrid', 'vertical', 'traditional', 'hydroponic', 'aquaponic', 'aeroponic'];
+const DISEASE_UPLOAD_MAX_EDGE = 1280;
+const DISEASE_UPLOAD_JPEG_QUALITY = 0.82;
+const DISEASE_UPLOAD_SKIP_BYTES = 1400 * 1024;
 
 function optionalNumber(value) {
   if (value === '' || value === null || value === undefined) return null;
@@ -168,8 +174,66 @@ function initialPageFromPath() {
   return 'home';
 }
 
+function initialTheme() {
+  if (typeof window === 'undefined') return 'dark';
+  const saved = window.localStorage.getItem('nuroagro_theme');
+  if (saved === 'light' || saved === 'dark') return saved;
+  return window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+}
+
+async function imageBitmapFromFile(file) {
+  if ('createImageBitmap' in window) {
+    return createImageBitmap(file);
+  }
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const url = URL.createObjectURL(file);
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('Could not read image'));
+    };
+    image.src = url;
+  });
+}
+
+async function prepareDiseaseUpload(file) {
+  if (!file?.type?.startsWith('image/') || file.type === 'image/gif') return file;
+  try {
+    const source = await imageBitmapFromFile(file);
+    const width = source.width;
+    const height = source.height;
+    const longest = Math.max(width, height);
+    if (longest <= DISEASE_UPLOAD_MAX_EDGE && file.size <= DISEASE_UPLOAD_SKIP_BYTES) {
+      source.close?.();
+      return file;
+    }
+
+    const scale = Math.min(1, DISEASE_UPLOAD_MAX_EDGE / longest);
+    const targetWidth = Math.max(1, Math.round(width * scale));
+    const targetHeight = Math.max(1, Math.round(height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+    const context = canvas.getContext('2d');
+    context.drawImage(source, 0, 0, targetWidth, targetHeight);
+    source.close?.();
+
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', DISEASE_UPLOAD_JPEG_QUALITY));
+    if (!blob || (file.type === 'image/jpeg' && blob.size >= file.size)) return file;
+    const baseName = file.name.replace(/\.[^.]+$/, '') || 'plant-scan';
+    return new File([blob], `${baseName}_scan.jpg`, { type: 'image/jpeg', lastModified: Date.now() });
+  } catch {
+    return file;
+  }
+}
+
 export default function App() {
   const [page, setPage] = useState(initialPageFromPath());
+  const [theme, setTheme] = useState(initialTheme);
   const [authMode, setAuthMode] = useState('login');
   const [authForm, setAuthForm] = useState(emptyAuthForm);
   const [authError, setAuthError] = useState('');
@@ -705,11 +769,15 @@ export default function App() {
   async function submitDiseaseImage(event) {
     event.preventDefault();
     const image = event.currentTarget.elements.image.files[0];
-    if (!image) return;
+    if (!image || !image.size) {
+      setDiseaseResult({ error: 'Please take or select a plant image first.' });
+      return;
+    }
     setLoading(true);
     setDiseaseResult(null);
+    const uploadImage = await prepareDiseaseUpload(image);
     const data = new FormData();
-    data.append('image', image);
+    data.append('image', uploadImage);
     data.append('device_id', deviceId);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 120000);
@@ -856,6 +924,11 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    window.localStorage.setItem('nuroagro_theme', theme);
+  }, [theme]);
+
+  useEffect(() => {
     if (!user) return undefined;
     refresh(deviceId, true);
     const timer = setInterval(() => refresh(deviceId, true), 15000);
@@ -883,8 +956,11 @@ export default function App() {
     <main className="app-shell">
       <header className="topbar">
         <button className="brand" onClick={() => setPage(user ? 'dashboard' : 'home')}>
-          <span><Leaf size={20} /></span>
-          <b>NuroAgro</b>
+          <img src={appLogo} alt="NeuroAgro logo" />
+          <span>
+            <b>NeuroAgro</b>
+            <small>Smart Farm OS</small>
+          </span>
         </button>
         <nav className="nav-tabs" aria-label="Primary">
           <NavButton icon={<Home />} active={page === 'home'} title="Console" onClick={() => setPage('home')} />
@@ -905,6 +981,14 @@ export default function App() {
           onSelect={goToSearchItem}
         />
         <div className="auth-actions">
+          <button
+            className="icon-button theme-toggle"
+            onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          >
+            {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
           {user ? (
             <>
               <span className="user-chip"><UserCheck size={16} /> {user.username}</span>
@@ -976,6 +1060,7 @@ export default function App() {
           notifications={notifications}
           analysis={analysis}
           weatherData={weatherData}
+          geoWeatherStatus={geoWeatherStatus}
           diseaseHistory={diseaseHistory}
           runSensorAnalysis={runSensorAnalysis}
           runWeatherPrediction={runWeatherPrediction}
@@ -1067,7 +1152,7 @@ export default function App() {
           onAdminChatSubmit={sendAdminChat}
         />
       )}
-      <AppFooter setPage={setPage} user={user} />
+      <AppFooter setPage={setPage} user={user} theme={theme} />
     </main>
   );
 }
@@ -1203,18 +1288,45 @@ function ManualPage({ user, setPage, openAuth, seedVirtualFarm, loading }) {
   );
 }
 
-function AppFooter({ setPage, user }) {
+function AppFooter({ setPage, user, theme }) {
+  const year = new Date().getFullYear();
   return (
     <footer className="app-footer">
-      <div>
-        <strong>NuroAgro</strong>
-        <span>Production-ready smart farming dashboard</span>
+      <div className="footer-brand">
+        <img src={appLogo} alt="NeuroAgro logo" />
+        <div>
+          <strong>NeuroAgro</strong>
+          <span>Intelligent farming, IoT control, weather intelligence, and crop disease vision.</span>
+        </div>
       </div>
-      <nav aria-label="Footer">
-        <button onClick={() => setPage(user ? 'dashboard' : 'home')}>Console</button>
-        <button onClick={() => setPage('manual')}>Manual</button>
-        <button onClick={() => setPage('admin')}>Admin</button>
-      </nav>
+      <div className="footer-columns">
+        <section>
+          <h4>Product</h4>
+          <button onClick={() => setPage(user ? 'dashboard' : 'home')}>Dashboard</button>
+          <button onClick={() => setPage(user ? 'projects' : 'home')}>Project setup</button>
+          <button onClick={() => setPage(user ? 'disease' : 'home')}>Disease vision</button>
+        </section>
+        <section>
+          <h4>System</h4>
+          <button onClick={() => setPage('manual')}>Manual</button>
+          <button onClick={() => setPage('admin')}>Admin</button>
+          <button onClick={() => setPage(user ? 'history' : 'home')}>History</button>
+        </section>
+        <section>
+          <h4>Status</h4>
+          <span>{theme === 'dark' ? 'Dark mode active' : 'Light mode active'}</span>
+          <span>ESP32 telemetry ready</span>
+          <span>Disease API enabled</span>
+        </section>
+      </div>
+      <div className="footer-bottom">
+        <span>© {year} NeuroAgro. Built for modern protected farming.</span>
+        <nav aria-label="Footer quick links">
+          <button onClick={() => setPage('manual')}>Documentation</button>
+          <button onClick={() => setPage(user ? 'chat' : 'home')}>Support</button>
+          <button onClick={() => setPage(user ? 'community' : 'home')}>Community</button>
+        </nav>
+      </div>
     </footer>
   );
 }
@@ -1347,7 +1459,7 @@ function ProjectPage({ form, setForm, project, advice, onSubmit, onDelete, useCu
 function DashboardPage(props) {
   const {
     user, project, advice, deviceId, setDeviceId, latest, readings, status, health, hardware,
-    recommendations, notifications, analysis, weatherData, runSensorAnalysis, runWeatherPrediction,
+    recommendations, notifications, analysis, weatherData, geoWeatherStatus, runSensorAnalysis, runWeatherPrediction,
     syncGeoWeather, trainWeatherModel, sendCommand, updateDeviceStatus, seedVirtualFarm, loading, setPage
   } = props;
 
@@ -1822,8 +1934,8 @@ function DiseasePage({ result, history, loading, onSubmit, onCameraScan, deviceI
           </div>
           <label className="upload-box">
             <Upload size={30} />
-            <span>Select plant image</span>
-            <input name="image" type="file" accept="image/*" />
+            <span>Take or select plant image</span>
+            <input name="image" type="file" accept="image/*" capture="environment" required />
           </label>
           <button className="primary-button auth-submit" disabled={loading}><Microscope size={18} /> {loading ? 'Analyzing' : 'Analyze Disease'}</button>
         </form>
@@ -2661,12 +2773,6 @@ function dotPosition(user, index) {
     top: `${22 + (index * 23) % 50}%`
   };
 }
-
-
-
-
-
-
 
 
 

@@ -3,6 +3,7 @@
     "dev": "node scripts/dev-final.mjs",
     "start": "npm run build && node scripts/dev-final.mjs",
     "build": "npm --prefix frontend_jsx run build",
+    "disease:dev": ".\\.venv\\Scripts\\python.exe disease_service\\app.py",
     "frontend:dev": "npm --prefix frontend_jsx run dev:vite",
     "backend:dev": "node scripts/dev.mjs --no-open",
     "backend\\:dev": "node scripts/dev-final.mjs --no-open"

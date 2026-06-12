@@ -41,8 +41,6 @@ from routes.api import (
     mirror_recommendation,
     mirror_user,
 )
-from disease_ml import analyze_image_for_disease as run_disease_analysis
-from disease_ml import load_model as load_disease_model
 
 # ==================== FLASK APP CONFIGURATION ====================
 
@@ -126,6 +124,7 @@ model_preload_started = False
 
 def load_yolo_model():
     """Load YOLO only when disease detection is requested."""
+    from disease_ml import load_model as load_disease_model
     global model, model_load_error
     if model is not None or model_load_error is not None:
         return model
@@ -143,6 +142,10 @@ def load_yolo_model():
 def warm_disease_model_async():
     """Load the disease model after startup so the first scan is not cold."""
     global model_preload_started
+    if os.environ.get('DISEASE_SERVICE_URL', '').strip():
+        logger.info("Skipping local YOLO preload because DISEASE_SERVICE_URL is configured")
+        return
+
     preload_default = 'true' if IS_CLOUD_RUNTIME else 'false'
     if model_preload_started or os.environ.get('DISEASE_MODEL_PRELOAD', preload_default).lower() in {'0', 'false', 'no', 'off'}:
         return
@@ -713,7 +716,13 @@ def allowed_file(filename):
 
 def analyze_image_for_disease(image_path):
     """Analyze image for crop diseases using YOLO."""
+    from routes.api import analyze_image_with_disease_service
     try:
+        remote_result = analyze_image_with_disease_service(image_path)
+        if remote_result is not None:
+            return remote_result
+
+        from disease_ml import analyze_image_for_disease as run_disease_analysis
         active_model = load_yolo_model()
         if not active_model:
             return {'error': f'Model not loaded: {model_load_error or "unknown error"}', 'primary_disease': None, 'confidence': 0}
@@ -851,6 +860,3 @@ if __name__ == '__main__':
     port = int(os.environ.get('PORT') or os.environ.get('IOT_APP_PORT', '5001'))
     host = os.environ.get('IOT_APP_HOST') or ('0.0.0.0' if os.environ.get('PORT') else '127.0.0.1')
     create_app().run(debug=False, host=host, port=port, use_reloader=False)
-
-
-

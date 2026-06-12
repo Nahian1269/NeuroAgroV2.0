@@ -1,0 +1,8 @@
+Flask==2.3.3
+python-dotenv==1.0.0
+Werkzeug==2.3.7
+ultralytics==8.0.205
+opencv-python-headless==4.8.1.78
+numpy==1.24.3
+Pillow==10.0.0
+gunicorn==22.0.0

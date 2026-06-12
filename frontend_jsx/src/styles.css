@@ -1980,3 +1980,1747 @@ textarea {
     width: 100%;
   }
 }
+
+/* NeuroAgro 2.0 dark operations template */
+:root {
+  color-scheme: dark;
+  --ink: #eef8f1;
+  --muted: #9cadab;
+  --line: rgba(180, 204, 191, 0.18);
+  --paper: #111916;
+  --wash: #08100d;
+  --green: #4fd083;
+  --deep: #e7f7ef;
+  --blue: #58a6d8;
+  --cyan: #46c7c0;
+  --amber: #e2ae45;
+  --coral: #e06c67;
+  --indigo: #8d94ff;
+  --rose: #ef72a6;
+  --violet: #b094ff;
+  --lime: #a6d65d;
+  --sky: #5db7ea;
+  --panel: rgba(17, 25, 22, 0.88);
+  --panel-strong: #141f1b;
+  --panel-soft: #0d1713;
+  --field: #0a130f;
+  --shadow: 0 22px 54px rgba(0, 0, 0, 0.38);
+}
+
+body {
+  background:
+    linear-gradient(145deg, rgba(8, 16, 13, 0.98), rgba(18, 28, 25, 0.98) 48%, rgba(11, 15, 20, 0.98)),
+    repeating-linear-gradient(90deg, rgba(255,255,255,0.028) 0 1px, transparent 1px 96px);
+  color: var(--ink);
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(rgba(79, 208, 131, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(70, 199, 192, 0.035) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: linear-gradient(180deg, rgba(0,0,0,0.72), rgba(0,0,0,0.08));
+}
+
+::selection {
+  background: rgba(79, 208, 131, 0.34);
+  color: #fff;
+}
+
+.app-shell {
+  width: min(1480px, calc(100% - 32px));
+  padding: 18px 0 42px 264px;
+}
+
+.topbar {
+  position: fixed;
+  inset: 18px auto 18px max(16px, calc((100vw - 1480px) / 2));
+  width: 232px;
+  margin: 0;
+  padding: 14px;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 14px;
+  border-color: var(--line);
+  background: rgba(12, 20, 17, 0.88);
+  box-shadow: var(--shadow);
+}
+
+.brand {
+  width: 100%;
+  justify-content: flex-start;
+  padding: 8px;
+  border-radius: 8px;
+  color: var(--ink);
+}
+
+.brand span {
+  background: #1b3428;
+  color: var(--green);
+  box-shadow: inset 0 0 0 1px rgba(79, 208, 131, 0.28);
+}
+
+.nav-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 8px;
+  border-color: var(--line);
+  background: rgba(6, 13, 10, 0.72);
+}
+
+.nav-tabs button,
+.icon-button {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--muted);
+}
+
+.nav-tabs button.active,
+.nav-tabs button:hover,
+.icon-button:hover {
+  border-color: rgba(79, 208, 131, 0.28);
+  background: rgba(79, 208, 131, 0.12);
+  color: var(--green);
+  box-shadow: none;
+}
+
+.auth-actions {
+  display: grid;
+  gap: 8px;
+  justify-content: stretch;
+  margin-top: auto;
+}
+
+.auth-actions .primary-button,
+.auth-actions .secondary-button {
+  width: 100%;
+}
+
+.user-chip,
+.global-search,
+.panel,
+.metric-card,
+.table-panel,
+.admin-login-panel,
+.admin-hero,
+.farm-visual,
+.visual-glass,
+.status-band,
+.profile-strip,
+.weather-card,
+.manual-hero,
+.pin-diagram,
+.cropguard-panel,
+.risk-factors span,
+.daily-weather-strip article {
+  border-color: var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+}
+
+.panel,
+.table-panel,
+.metric-card,
+.weather-card,
+.cropguard-panel,
+.admin-hero,
+.manual-hero,
+.pin-diagram {
+  backdrop-filter: blur(16px);
+}
+
+.global-search {
+  width: 100%;
+  max-width: none;
+  min-height: 42px;
+  padding: 0 10px;
+  box-shadow: none;
+}
+
+.global-search input,
+input,
+select,
+textarea {
+  background: var(--field);
+  color: var(--ink);
+  border-color: var(--line);
+}
+
+.global-search input {
+  background: transparent;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #71837d;
+}
+
+h1,
+h2,
+h3,
+.brand b,
+.panel-title h3,
+.risk-factors b,
+.daily-weather-strip strong {
+  color: var(--ink);
+}
+
+.eyebrow {
+  color: var(--green);
+}
+
+.lead,
+.muted,
+.daily-weather-strip small,
+.quality-list span,
+.stat-list span,
+.feature-chip,
+.camera-strip,
+.table-panel td,
+.table-panel th,
+.profile-strip span,
+.manual-card p,
+.pin-lines span {
+  color: var(--muted);
+}
+
+.primary-button,
+.action-row button {
+  border-color: rgba(79, 208, 131, 0.34);
+  background: #2f9b62;
+  color: #04120b;
+}
+
+.primary-button:hover,
+.action-row button:hover {
+  background: #43c77b;
+}
+
+.secondary-button,
+.button-pair button,
+.table-actions button {
+  border-color: var(--line);
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--ink);
+}
+
+.secondary-button:hover,
+.button-pair button:hover,
+.table-actions button:hover {
+  border-color: rgba(70, 199, 192, 0.34);
+  background: rgba(70, 199, 192, 0.11);
+  color: var(--cyan);
+}
+
+.launch-grid {
+  min-height: calc(100vh - 64px);
+  grid-template-columns: minmax(340px, 0.82fr) minmax(430px, 1.18fr);
+  align-items: center;
+}
+
+.launch-copy {
+  min-height: 560px;
+  padding-right: 22px;
+}
+
+.farm-visual {
+  min-height: 560px;
+  background:
+    linear-gradient(145deg, rgba(17, 32, 26, 0.95), rgba(20, 30, 38, 0.94)),
+    url('/uploads/rice-disease.jpg') center/cover;
+  background-blend-mode: multiply;
+}
+
+.visual-glass {
+  background: rgba(9, 18, 15, 0.72);
+}
+
+.metric-icon,
+.panel-title svg,
+.section-title svg,
+.feature-chip svg {
+  color: var(--green);
+}
+
+.metric-card:nth-child(2) .metric-icon,
+.feature-chip:nth-child(2) svg {
+  color: var(--sky);
+}
+
+.metric-card:nth-child(3) .metric-icon,
+.feature-chip:nth-child(3) svg {
+  color: var(--amber);
+}
+
+.metric-card:nth-child(5) .metric-icon,
+.feature-chip:nth-child(4) svg {
+  color: var(--rose);
+}
+
+.status-band,
+.camera-strip,
+.quality-list span,
+.rec-item,
+.stat-list span,
+.feature-chip,
+.risk-factors span,
+.daily-weather-strip article,
+.thread-list button,
+.chat-message,
+.reply-row,
+.notification-item {
+  border-color: var(--line);
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.upload-box {
+  border-color: rgba(79, 208, 131, 0.34);
+  background: rgba(79, 208, 131, 0.07);
+  color: var(--ink);
+}
+
+.upload-box:hover {
+  background: rgba(79, 208, 131, 0.13);
+}
+
+.diagnosis img,
+.sample-image img,
+.disease-history-grid img {
+  border-color: var(--line);
+  background: #07100d;
+}
+
+.form-error {
+  border-color: rgba(224, 108, 103, 0.36);
+  background: rgba(224, 108, 103, 0.12);
+  color: #ffb9b6;
+}
+
+.form-notice {
+  border-color: rgba(79, 208, 131, 0.36);
+  background: rgba(79, 208, 131, 0.12);
+  color: #baf4cf;
+}
+
+table,
+.data-table,
+.table-panel table {
+  background: transparent;
+}
+
+th {
+  color: var(--ink);
+}
+
+td,
+th {
+  border-color: var(--line);
+}
+
+.mode-tabs,
+.pill-row,
+.range-control,
+.toggle-row {
+  border-color: var(--line);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.mode-tabs button.active,
+.pill-row span,
+.daily-weather-strip span {
+  color: var(--cyan);
+}
+
+.admin-metrics,
+.dashboard-grid,
+.history-grid,
+.profile-grid,
+.manual-grid,
+.admin-dashboard-grid,
+.disease-history-grid {
+  gap: 14px;
+}
+
+.app-footer {
+  margin-top: 24px;
+  padding: 18px 0 0;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+}
+
+@media (max-width: 1060px) {
+  .app-shell {
+    width: min(100% - 24px, 980px);
+    padding-left: 0;
+  }
+
+  .topbar {
+    position: sticky;
+    inset: auto;
+    width: auto;
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+
+  .nav-tabs {
+    display: flex;
+  }
+
+  .nav-tabs button,
+  .icon-button {
+    width: 40px;
+  }
+
+  .auth-actions {
+    display: flex;
+    margin-top: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .topbar {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .brand {
+    justify-content: center;
+  }
+
+  .nav-tabs {
+    justify-content: center;
+  }
+
+  .launch-grid,
+  .split-grid,
+  .split-grid.wide-left {
+    grid-template-columns: 1fr;
+  }
+
+  .launch-copy,
+  .farm-visual {
+    min-height: auto;
+  }
+
+  h1 {
+    font-size: clamp(2.6rem, 18vw, 4.2rem);
+  }
+}
+
+/* Visual refinement: richer dark console, less flat sheet layout */
+:root {
+  --ink: #f2fbf6;
+  --muted: #a8b9b2;
+  --line: rgba(201, 223, 211, 0.15);
+  --paper: rgba(18, 27, 24, 0.92);
+  --wash: #07110e;
+  --green: #66df98;
+  --deep: #f2fbf6;
+  --blue: #65aee3;
+  --cyan: #59d0c8;
+  --amber: #e9bd5a;
+  --coral: #ef7b72;
+  --rose: #f27fb0;
+  --violet: #ab96ff;
+  --panel: rgba(17, 27, 24, 0.82);
+  --panel-strong: rgba(22, 35, 31, 0.94);
+  --field: rgba(8, 16, 13, 0.9);
+  --shadow: 0 18px 46px rgba(0, 0, 0, 0.32);
+}
+
+body {
+  background:
+    radial-gradient(circle at 18% 0%, rgba(102, 223, 152, 0.13), transparent 33%),
+    radial-gradient(circle at 86% 16%, rgba(89, 208, 200, 0.12), transparent 31%),
+    radial-gradient(circle at 52% 96%, rgba(233, 189, 90, 0.08), transparent 34%),
+    linear-gradient(135deg, #07110e 0%, #101b18 46%, #0b1016 100%);
+}
+
+body::before {
+  display: none;
+}
+
+.app-shell {
+  width: min(1320px, calc(100% - 28px));
+  padding: 14px 0 48px;
+}
+
+.topbar {
+  position: sticky;
+  inset: auto;
+  top: 12px;
+  width: auto;
+  min-height: 70px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 18px;
+  padding: 10px;
+  background: rgba(12, 20, 18, 0.82);
+  border-color: rgba(201, 223, 211, 0.14);
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.26);
+}
+
+.brand {
+  width: auto;
+  min-width: 148px;
+}
+
+.nav-tabs {
+  display: flex;
+  flex: 1 1 auto;
+  justify-content: center;
+  max-width: 560px;
+  grid-template-columns: none;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.nav-tabs button,
+.icon-button {
+  width: 40px;
+  height: 40px;
+  background: transparent;
+}
+
+.nav-tabs button.active,
+.nav-tabs button:hover,
+.icon-button:hover {
+  background: rgba(102, 223, 152, 0.14);
+  color: var(--green);
+}
+
+.auth-actions {
+  display: flex;
+  align-items: center;
+  margin-top: 0;
+}
+
+.auth-actions .primary-button,
+.auth-actions .secondary-button {
+  width: auto;
+}
+
+.global-search {
+  width: min(220px, 22vw);
+  flex: 0 1 220px;
+}
+
+.panel,
+.table-panel,
+.metric-card,
+.weather-card,
+.cropguard-panel,
+.admin-hero,
+.manual-hero,
+.pin-diagram,
+.admin-login-panel {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.025)),
+    var(--panel);
+  border-color: rgba(201, 223, 211, 0.14);
+  box-shadow: var(--shadow);
+}
+
+.farm-visual {
+  background:
+    linear-gradient(135deg, rgba(11, 24, 19, 0.72), rgba(15, 23, 31, 0.86)),
+    url('/uploads/rice-disease.jpg') center/cover;
+  box-shadow: var(--shadow);
+}
+
+.visual-glass,
+.status-band,
+.camera-strip,
+.quality-list span,
+.rec-item,
+.stat-list span,
+.feature-chip,
+.risk-factors span,
+.daily-weather-strip article,
+.thread-list button,
+.chat-message,
+.reply-row,
+.notification-item {
+  background: rgba(255, 255, 255, 0.055);
+  border-color: rgba(201, 223, 211, 0.13);
+  box-shadow: none;
+}
+
+.primary-button,
+.action-row button {
+  background: linear-gradient(180deg, #72e7a3, #3ebd75);
+  border-color: rgba(114, 231, 163, 0.48);
+  color: #06140d;
+}
+
+.secondary-button,
+.button-pair button,
+.table-actions button {
+  background: rgba(255, 255, 255, 0.055);
+}
+
+input,
+select,
+textarea {
+  background: rgba(6, 13, 10, 0.78);
+}
+
+.upload-box {
+  background:
+    linear-gradient(180deg, rgba(102, 223, 152, 0.13), rgba(89, 208, 200, 0.06));
+  border-color: rgba(102, 223, 152, 0.38);
+}
+
+.form-panel,
+.diagnosis-panel {
+  min-height: 100%;
+}
+
+@media (max-width: 980px) {
+  .topbar {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .brand {
+    justify-content: center;
+  }
+
+  .nav-tabs {
+    max-width: none;
+    justify-content: center;
+  }
+
+  .global-search {
+    width: 100%;
+    flex-basis: auto;
+  }
+
+  .auth-actions {
+    justify-content: center;
+  }
+}
+
+/* NeuroAgro professional light/dark UI system */
+:root {
+  color-scheme: dark;
+  --bg: #08110e;
+  --bg-2: #101a18;
+  --surface: rgba(18, 28, 25, 0.88);
+  --surface-2: rgba(24, 38, 34, 0.88);
+  --surface-solid: #15231f;
+  --ink: #f4fbf7;
+  --deep: #f4fbf7;
+  --muted: #a7b8b0;
+  --line: rgba(202, 224, 213, 0.16);
+  --field: rgba(8, 17, 14, 0.86);
+  --green: #56d88c;
+  --cyan: #48c9c2;
+  --blue: #5aa7df;
+  --amber: #e4b957;
+  --coral: #ed746d;
+  --rose: #ee7cab;
+  --violet: #a894ff;
+  --sky: #5ab6ea;
+  --shadow: 0 18px 44px rgba(0, 0, 0, 0.28);
+  --soft-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+  --brand-gradient: linear-gradient(135deg, #56d88c, #48c9c2 56%, #5aa7df);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f5f8f4;
+  --bg-2: #eaf1ed;
+  --surface: rgba(255, 255, 255, 0.88);
+  --surface-2: rgba(247, 251, 248, 0.94);
+  --surface-solid: #ffffff;
+  --ink: #10201a;
+  --deep: #10201a;
+  --muted: #61736b;
+  --line: rgba(24, 56, 42, 0.14);
+  --field: #ffffff;
+  --green: #168a52;
+  --cyan: #168f8a;
+  --blue: #236fa5;
+  --amber: #a56d13;
+  --coral: #bd4f48;
+  --rose: #b84272;
+  --violet: #6254b4;
+  --sky: #237eb9;
+  --shadow: 0 18px 44px rgba(25, 47, 37, 0.12);
+  --soft-shadow: 0 10px 26px rgba(25, 47, 37, 0.09);
+  --brand-gradient: linear-gradient(135deg, #1b8f55, #168f8a 56%, #237eb9);
+}
+
+:root[data-theme="dark"] body,
+body {
+  background:
+    radial-gradient(circle at 14% 0%, rgba(86, 216, 140, 0.16), transparent 34%),
+    radial-gradient(circle at 86% 12%, rgba(72, 201, 194, 0.13), transparent 30%),
+    radial-gradient(circle at 62% 100%, rgba(228, 185, 87, 0.09), transparent 30%),
+    linear-gradient(135deg, var(--bg), var(--bg-2) 54%, #0b1118);
+  color: var(--ink);
+}
+
+:root[data-theme="light"] body {
+  background:
+    radial-gradient(circle at 12% 0%, rgba(22, 138, 82, 0.12), transparent 32%),
+    radial-gradient(circle at 88% 10%, rgba(35, 126, 185, 0.12), transparent 28%),
+    linear-gradient(135deg, #f8faf6, #eef5f0 52%, #e7f0f4);
+}
+
+.app-shell {
+  width: min(1340px, calc(100% - 28px));
+  padding: 16px 0 42px;
+}
+
+.topbar {
+  position: sticky;
+  inset: auto;
+  top: 12px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  min-height: 74px;
+  margin: 0 0 20px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-solid) 72%, transparent);
+  box-shadow: var(--soft-shadow);
+  backdrop-filter: blur(18px);
+}
+
+.brand {
+  width: auto;
+  min-width: 178px;
+  gap: 10px;
+  padding: 6px 8px;
+  color: var(--ink);
+}
+
+.brand img {
+  width: 46px;
+  height: 46px;
+  object-fit: contain;
+  border-radius: 8px;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: inset 0 0 0 1px rgba(16, 32, 26, 0.08);
+}
+
+.brand > span {
+  width: auto;
+  height: auto;
+  display: grid;
+  place-items: initial;
+  gap: 1px;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+}
+
+.brand b {
+  color: var(--ink);
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.brand small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.nav-tabs {
+  flex: 1 1 auto;
+  justify-content: center;
+  max-width: 600px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  background: rgba(127, 151, 137, 0.08);
+}
+
+.nav-tabs button,
+.icon-button {
+  width: 40px;
+  height: 40px;
+  border: 1px solid transparent;
+  color: var(--muted);
+  background: transparent;
+}
+
+.nav-tabs button.active,
+.nav-tabs button:hover,
+.icon-button:hover,
+.theme-toggle {
+  border-color: color-mix(in srgb, var(--green) 34%, transparent);
+  background: color-mix(in srgb, var(--green) 12%, transparent);
+  color: var(--green);
+  box-shadow: none;
+}
+
+.global-search {
+  flex: 0 1 230px;
+  width: min(230px, 22vw);
+  min-height: 42px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--ink);
+  box-shadow: none;
+}
+
+.auth-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 0;
+}
+
+.user-chip,
+.panel,
+.table-panel,
+.metric-card,
+.weather-card,
+.signal-card,
+.cropguard-panel,
+.admin-hero,
+.admin-login-panel,
+.manual-hero,
+.pin-diagram,
+.farm-visual {
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.018)),
+    var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+}
+
+:root[data-theme="light"] .user-chip,
+:root[data-theme="light"] .panel,
+:root[data-theme="light"] .table-panel,
+:root[data-theme="light"] .metric-card,
+:root[data-theme="light"] .weather-card,
+:root[data-theme="light"] .signal-card,
+:root[data-theme="light"] .cropguard-panel,
+:root[data-theme="light"] .admin-hero,
+:root[data-theme="light"] .admin-login-panel,
+:root[data-theme="light"] .manual-hero,
+:root[data-theme="light"] .pin-diagram,
+:root[data-theme="light"] .farm-visual {
+  background: var(--surface);
+}
+
+.panel-title,
+.section-title,
+.dashboard-head {
+  gap: 12px;
+}
+
+h1,
+h2,
+h3,
+h4,
+.panel-title h3,
+.section-title h2,
+.risk-factors b,
+.daily-weather-strip strong,
+.app-footer strong {
+  color: var(--ink);
+}
+
+.lead,
+.muted,
+.quality-list span,
+.camera-strip,
+.stat-list span,
+.profile-strip span,
+.table-panel td,
+.table-panel th,
+.manual-card p,
+.pin-lines span,
+.daily-weather-strip small,
+.app-footer span {
+  color: var(--muted);
+}
+
+.eyebrow {
+  color: var(--green);
+}
+
+input,
+select,
+textarea,
+.global-search input {
+  border-color: var(--line);
+  background: var(--field);
+  color: var(--ink);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: color-mix(in srgb, var(--muted) 74%, transparent);
+}
+
+.primary-button,
+.action-row button {
+  border: 0;
+  background: var(--brand-gradient);
+  color: #06140d;
+  box-shadow: 0 10px 22px color-mix(in srgb, var(--green) 18%, transparent);
+}
+
+.secondary-button,
+.button-pair button,
+.table-actions button {
+  border-color: var(--line);
+  background: color-mix(in srgb, var(--surface-solid) 72%, transparent);
+  color: var(--ink);
+}
+
+.secondary-button:hover,
+.button-pair button:hover,
+.table-actions button:hover {
+  border-color: color-mix(in srgb, var(--cyan) 34%, transparent);
+  background: color-mix(in srgb, var(--cyan) 12%, transparent);
+  color: var(--cyan);
+}
+
+.launch-grid {
+  min-height: calc(100vh - 172px);
+  grid-template-columns: minmax(330px, 0.82fr) minmax(430px, 1.18fr);
+}
+
+.launch-copy {
+  min-height: 520px;
+  padding-right: 18px;
+}
+
+.farm-visual {
+  min-height: 520px;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, rgba(8, 19, 15, 0.62), rgba(14, 27, 36, 0.72)),
+    url('/uploads/rice-disease.jpg') center/cover;
+}
+
+:root[data-theme="light"] .farm-visual {
+  background:
+    linear-gradient(135deg, rgba(241, 249, 244, 0.62), rgba(216, 235, 238, 0.68)),
+    url('/uploads/rice-disease.jpg') center/cover;
+}
+
+.visual-glass,
+.status-band,
+.camera-strip,
+.quality-list span,
+.rec-item,
+.feature-chip,
+.risk-factors span,
+.daily-weather-strip article,
+.thread-list button,
+.chat-message,
+.reply-row,
+.notification-item,
+.pin-lines span {
+  border-color: var(--line);
+  background: color-mix(in srgb, var(--surface-solid) 58%, transparent);
+  color: var(--muted);
+}
+
+.metric-icon,
+.panel-title svg,
+.section-title svg,
+.feature-chip svg {
+  color: var(--green);
+}
+
+.metric-card:nth-child(2) .metric-icon,
+.feature-chip:nth-child(2) svg {
+  color: var(--blue);
+}
+
+.metric-card:nth-child(3) .metric-icon,
+.feature-chip:nth-child(3) svg {
+  color: var(--amber);
+}
+
+.metric-card:nth-child(5) .metric-icon,
+.feature-chip:nth-child(4) svg {
+  color: var(--rose);
+}
+
+.upload-box {
+  border-color: color-mix(in srgb, var(--green) 38%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--green) 12%, transparent), color-mix(in srgb, var(--cyan) 7%, transparent));
+  color: var(--ink);
+}
+
+.diagnosis img,
+.sample-image img,
+.disease-history-grid img {
+  border: 1px solid var(--line);
+  background: var(--surface-solid);
+}
+
+td,
+th {
+  border-color: var(--line);
+}
+
+.mode-tabs,
+.pill-row,
+.range-control,
+.toggle-row {
+  border-color: var(--line);
+  background: color-mix(in srgb, var(--surface-solid) 52%, transparent);
+}
+
+.pill,
+.pill-row span,
+.daily-weather-strip span {
+  color: var(--cyan);
+}
+
+.form-error {
+  border-color: color-mix(in srgb, var(--coral) 44%, transparent);
+  background: color-mix(in srgb, var(--coral) 12%, transparent);
+  color: var(--coral);
+}
+
+.form-notice {
+  border-color: color-mix(in srgb, var(--green) 44%, transparent);
+  background: color-mix(in srgb, var(--green) 12%, transparent);
+  color: var(--green);
+}
+
+.app-footer {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.1fr) minmax(420px, 1.6fr);
+  gap: 24px;
+  margin-top: 36px;
+  padding: 26px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--green) 8%, transparent), transparent 38%),
+    var(--surface);
+  box-shadow: var(--soft-shadow);
+}
+
+.footer-brand {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.footer-brand img {
+  width: 70px;
+  height: 70px;
+  object-fit: contain;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  padding: 6px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: inset 0 0 0 1px rgba(16, 32, 26, 0.08);
+}
+
+.footer-brand div {
+  display: grid;
+  gap: 6px;
+}
+
+.footer-brand strong {
+  font-size: 1.18rem;
+}
+
+.footer-brand span {
+  max-width: 420px;
+  line-height: 1.55;
+}
+
+.footer-columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.footer-columns section {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.footer-columns h4 {
+  margin: 0 0 4px;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.app-footer button {
+  width: fit-content;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 850;
+}
+
+.app-footer button:hover {
+  color: var(--green);
+}
+
+.footer-bottom {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.footer-bottom nav {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 1040px) {
+  .topbar {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .brand {
+    justify-content: center;
+  }
+
+  .nav-tabs {
+    max-width: none;
+    justify-content: center;
+  }
+
+  .global-search {
+    width: 100%;
+    flex-basis: auto;
+  }
+
+  .auth-actions {
+    justify-content: center;
+  }
+}
+
+@media (max-width: 760px) {
+  .app-shell {
+    width: min(100% - 20px, 680px);
+  }
+
+  .launch-grid,
+  .split-grid,
+  .split-grid.wide-left,
+  .app-footer,
+  .footer-columns,
+  .footer-bottom {
+    grid-template-columns: 1fr;
+  }
+
+  .launch-copy,
+  .farm-visual {
+    min-height: auto;
+  }
+
+  .footer-bottom {
+    align-items: flex-start;
+  }
+
+  .footer-brand {
+    display: grid;
+  }
+}
+
+/* Final polish: dark readability and brighter action language */
+:root[data-theme="dark"] {
+  --bg: #061512;
+  --bg-2: #0d211d;
+  --surface: rgba(13, 29, 25, 0.9);
+  --surface-2: rgba(17, 39, 34, 0.92);
+  --surface-solid: #10251f;
+  --ink: #f3fff8;
+  --deep: #f3fff8;
+  --muted: #a8beb5;
+  --line: rgba(126, 255, 183, 0.18);
+  --field: rgba(4, 18, 14, 0.9);
+  --green: #46ef91;
+  --cyan: #35d5d0;
+  --blue: #45acef;
+  --amber: #ffc85a;
+  --coral: #ff7d73;
+  --shadow: 0 22px 56px rgba(0, 0, 0, 0.36);
+  --brand-gradient: linear-gradient(135deg, #46ef91 0%, #35d5d0 54%, #45acef 100%);
+}
+
+:root[data-theme="dark"] body {
+  background:
+    radial-gradient(circle at 12% -6%, rgba(70, 239, 145, 0.2), transparent 34%),
+    radial-gradient(circle at 88% 2%, rgba(53, 213, 208, 0.18), transparent 31%),
+    radial-gradient(circle at 58% 104%, rgba(69, 172, 239, 0.11), transparent 32%),
+    linear-gradient(135deg, #061512 0%, #0b1c18 52%, #071018 100%);
+}
+
+:root[data-theme="light"] {
+  --bg: #f6fbf6;
+  --bg-2: #eaf5ef;
+  --surface: rgba(255, 255, 255, 0.94);
+  --surface-2: rgba(248, 253, 250, 0.98);
+  --surface-solid: #ffffff;
+  --ink: #0c1d17;
+  --deep: #0c1d17;
+  --muted: #5c7067;
+  --line: rgba(19, 104, 67, 0.16);
+  --green: #0f9f5b;
+  --cyan: #079b96;
+  --blue: #1e78b7;
+  --amber: #b87910;
+  --brand-gradient: linear-gradient(135deg, #16b86b 0%, #0aa9a3 54%, #258bd0 100%);
+}
+
+:root[data-theme="dark"] .hardware-section,
+:root[data-theme="dark"] .hardware-card,
+:root[data-theme="dark"] .signal-card,
+:root[data-theme="dark"] .metric-card,
+:root[data-theme="dark"] .panel,
+:root[data-theme="dark"] .table-panel,
+:root[data-theme="dark"] .weather-card,
+:root[data-theme="dark"] .cropguard-panel,
+:root[data-theme="dark"] .admin-hero,
+:root[data-theme="dark"] .admin-login-panel,
+:root[data-theme="dark"] .manual-hero,
+:root[data-theme="dark"] .pin-diagram {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.065), rgba(255, 255, 255, 0.026)),
+    var(--surface);
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+:root[data-theme="dark"] .hardware-section {
+  background:
+    linear-gradient(135deg, rgba(70, 239, 145, 0.08), rgba(53, 213, 208, 0.05)),
+    rgba(10, 25, 21, 0.92);
+}
+
+:root[data-theme="dark"] .hardware-card {
+  min-height: 124px;
+  background:
+    linear-gradient(145deg, rgba(22, 50, 43, 0.96), rgba(11, 27, 23, 0.94));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 14px 30px rgba(0, 0, 0, 0.24);
+}
+
+:root[data-theme="dark"] .hardware-card.good {
+  border-color: rgba(70, 239, 145, 0.28);
+}
+
+:root[data-theme="dark"] .hardware-card.warn {
+  border-color: rgba(255, 200, 90, 0.34);
+}
+
+:root[data-theme="dark"] .hardware-card.danger {
+  border-color: rgba(255, 125, 115, 0.34);
+}
+
+:root[data-theme="dark"] .hardware-card.idle {
+  border-color: rgba(168, 190, 181, 0.18);
+}
+
+:root[data-theme="dark"] .hardware-card span,
+:root[data-theme="dark"] .signal-card span,
+:root[data-theme="dark"] .metric-card span,
+:root[data-theme="dark"] label,
+:root[data-theme="dark"] .control-row span {
+  color: #a9c5bb;
+}
+
+:root[data-theme="dark"] .hardware-card strong,
+:root[data-theme="dark"] .signal-card strong,
+:root[data-theme="dark"] .metric-card strong,
+:root[data-theme="dark"] .pin-lines b,
+:root[data-theme="dark"] .visual-footer strong {
+  color: #f3fff8;
+}
+
+:root[data-theme="dark"] .hardware-card.idle strong {
+  color: #d2e3dc;
+}
+
+:root[data-theme="dark"] .visual-chip,
+:root[data-theme="dark"] .visual-footer,
+:root[data-theme="dark"] .pin-lines span,
+:root[data-theme="dark"] .status-band,
+:root[data-theme="dark"] .camera-strip,
+:root[data-theme="dark"] .quality-list span,
+:root[data-theme="dark"] .rec-item,
+:root[data-theme="dark"] .feature-chip,
+:root[data-theme="dark"] .risk-factors span,
+:root[data-theme="dark"] .daily-weather-strip article,
+:root[data-theme="dark"] .thread-list button,
+:root[data-theme="dark"] .chat-message,
+:root[data-theme="dark"] .reply-row,
+:root[data-theme="dark"] .notification-item {
+  background: rgba(15, 37, 31, 0.72);
+  border-color: rgba(126, 255, 183, 0.14);
+  color: #a9c5bb;
+}
+
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea,
+:root[data-theme="dark"] .global-search input {
+  background: rgba(5, 18, 15, 0.92);
+  color: #f3fff8;
+  border-color: rgba(126, 255, 183, 0.18);
+}
+
+.primary-button,
+.action-row button,
+.auth-submit {
+  background: var(--brand-gradient);
+  color: #03140c;
+  border: 0;
+  box-shadow: 0 12px 26px rgba(53, 213, 208, 0.22);
+}
+
+.primary-button:hover,
+.action-row button:hover,
+.auth-submit:hover {
+  transform: translateY(-1px);
+  filter: saturate(1.12) brightness(1.04);
+}
+
+.secondary-button,
+.button-pair button,
+.table-actions button,
+.manual-actions button,
+.dashboard-actions button {
+  border: 1px solid color-mix(in srgb, var(--cyan) 28%, var(--line));
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--green) 10%, transparent), color-mix(in srgb, var(--blue) 8%, transparent)),
+    color-mix(in srgb, var(--surface-solid) 82%, transparent);
+  color: var(--ink);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.1);
+}
+
+.secondary-button:hover,
+.button-pair button:hover,
+.table-actions button:hover,
+.manual-actions button:hover,
+.dashboard-actions button:hover {
+  color: #03140c;
+  border-color: transparent;
+  background: var(--brand-gradient);
+}
+
+:root[data-theme="dark"] .system-pill {
+  background: rgba(70, 239, 145, 0.12);
+  border: 1px solid rgba(70, 239, 145, 0.2);
+  color: var(--green);
+}
+
+/* Whole-application recolor layer. Functionality untouched. */
+:root[data-theme="dark"] {
+  --app-bg-0: #06120f;
+  --app-bg-1: #0b211c;
+  --app-card: #102a24;
+  --app-card-2: #14342d;
+  --app-card-3: #0c211c;
+  --app-text: #f2fff8;
+  --app-muted: #b6cbc2;
+  --app-soft: #7f9b90;
+  --app-border: rgba(88, 241, 156, 0.2);
+  --app-glow: rgba(48, 237, 142, 0.16);
+  --app-accent: #39ed91;
+  --app-accent-2: #30d7d1;
+  --app-accent-3: #4fb5ff;
+  --app-warn: #ffc857;
+  --app-danger: #ff7a72;
+  --app-action: linear-gradient(135deg, #39ed91 0%, #30d7d1 52%, #4fb5ff 100%);
+  --app-action-soft: linear-gradient(135deg, rgba(57, 237, 145, 0.18), rgba(48, 215, 209, 0.12));
+}
+
+:root[data-theme="light"] {
+  --app-bg-0: #f6fbf7;
+  --app-bg-1: #eaf5ef;
+  --app-card: #ffffff;
+  --app-card-2: #f7fcf9;
+  --app-card-3: #edf7f2;
+  --app-text: #0e221a;
+  --app-muted: #5d7469;
+  --app-soft: #7d9288;
+  --app-border: rgba(18, 116, 70, 0.16);
+  --app-glow: rgba(13, 150, 84, 0.11);
+  --app-accent: #0fa75f;
+  --app-accent-2: #079c96;
+  --app-accent-3: #217fc1;
+  --app-warn: #a96f0e;
+  --app-danger: #bf5149;
+  --app-action: linear-gradient(135deg, #13b96a 0%, #08aaa3 52%, #2689cc 100%);
+  --app-action-soft: linear-gradient(135deg, rgba(15, 167, 95, 0.12), rgba(7, 156, 150, 0.08));
+}
+
+body {
+  background:
+    radial-gradient(circle at 9% -10%, color-mix(in srgb, var(--app-accent) 20%, transparent), transparent 34%),
+    radial-gradient(circle at 90% 4%, color-mix(in srgb, var(--app-accent-2) 18%, transparent), transparent 30%),
+    linear-gradient(135deg, var(--app-bg-0), var(--app-bg-1) 58%, var(--app-bg-0));
+  color: var(--app-text);
+}
+
+.topbar,
+.app-footer,
+.panel,
+.table-panel,
+.metric-card,
+.signal-card,
+.hardware-section,
+.hardware-card,
+.weather-card,
+.cropguard-panel,
+.admin-hero,
+.admin-login-panel,
+.manual-hero,
+.pin-diagram,
+.profile-strip,
+.status-band,
+.farm-visual,
+.visual-chip,
+.visual-footer,
+.dashboard-head,
+.project-summary,
+.approval-rail,
+.earth-panel,
+.admin-create-panel,
+.admin-chat-panel,
+.diagnosis-panel,
+.form-panel,
+.table-wrap,
+.weather-status,
+.history-card,
+.community-card,
+.forum-post,
+.chat-panel,
+.profile-card {
+  border-color: var(--app-border) !important;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, #ffffff 4%, transparent), transparent),
+    var(--app-card) !important;
+  color: var(--app-text) !important;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.22);
+}
+
+:root[data-theme="light"] .topbar,
+:root[data-theme="light"] .app-footer,
+:root[data-theme="light"] .panel,
+:root[data-theme="light"] .table-panel,
+:root[data-theme="light"] .metric-card,
+:root[data-theme="light"] .signal-card,
+:root[data-theme="light"] .hardware-section,
+:root[data-theme="light"] .hardware-card,
+:root[data-theme="light"] .weather-card,
+:root[data-theme="light"] .cropguard-panel,
+:root[data-theme="light"] .admin-hero,
+:root[data-theme="light"] .admin-login-panel,
+:root[data-theme="light"] .manual-hero,
+:root[data-theme="light"] .pin-diagram,
+:root[data-theme="light"] .profile-strip,
+:root[data-theme="light"] .status-band,
+:root[data-theme="light"] .farm-visual,
+:root[data-theme="light"] .visual-chip,
+:root[data-theme="light"] .visual-footer,
+:root[data-theme="light"] .dashboard-head,
+:root[data-theme="light"] .project-summary,
+:root[data-theme="light"] .approval-rail,
+:root[data-theme="light"] .earth-panel,
+:root[data-theme="light"] .admin-create-panel,
+:root[data-theme="light"] .admin-chat-panel,
+:root[data-theme="light"] .diagnosis-panel,
+:root[data-theme="light"] .form-panel,
+:root[data-theme="light"] .table-wrap,
+:root[data-theme="light"] .weather-status,
+:root[data-theme="light"] .history-card,
+:root[data-theme="light"] .community-card,
+:root[data-theme="light"] .forum-post,
+:root[data-theme="light"] .chat-panel,
+:root[data-theme="light"] .profile-card {
+  box-shadow: 0 18px 40px rgba(18, 65, 42, 0.1);
+}
+
+.panel > article,
+.table-panel > article,
+.weather-card,
+.score,
+.stat-list span,
+.quality-list span,
+.camera-strip,
+.rec-item,
+.feature-chip,
+.risk-factors span,
+.daily-weather-strip article,
+.thread-list button,
+.chat-message,
+.reply-row,
+.notification-item,
+.pin-lines span,
+.button-pair,
+.toggle-row,
+.range-control,
+.mode-tabs,
+.pill-row,
+.upload-box,
+.sample-image,
+.diagnosis,
+.disease-history-grid article,
+.admin-table-panel,
+.profile-dashboard,
+.message-list,
+.admin-thread,
+.thread-list,
+.score-grid > *,
+.weather-grid > *,
+.history-grid > *,
+.form-grid > *,
+.control-card,
+.relay-card {
+  border-color: var(--app-border) !important;
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--app-accent) 7%, transparent), color-mix(in srgb, var(--app-accent-2) 4%, transparent)),
+    var(--app-card-2) !important;
+  color: var(--app-text) !important;
+}
+
+:root[data-theme="dark"] .score,
+:root[data-theme="dark"] .weather-card,
+:root[data-theme="dark"] .daily-weather-strip article,
+:root[data-theme="dark"] .button-pair button,
+:root[data-theme="dark"] .score-grid > *,
+:root[data-theme="dark"] .weather-grid > *,
+:root[data-theme="dark"] .form-grid > *,
+:root[data-theme="dark"] .control-card,
+:root[data-theme="dark"] .relay-card {
+  background:
+    linear-gradient(145deg, rgba(57, 237, 145, 0.11), rgba(48, 215, 209, 0.05)),
+    #123229 !important;
+}
+
+h1,
+h2,
+h3,
+h4,
+.panel-title h3,
+.section-title h2,
+.dashboard-head h2,
+.page-title h2,
+.brand b,
+.score strong,
+.signal-card strong,
+.metric-card strong,
+.hardware-card strong,
+.weather-card strong,
+.stat-list b,
+.rec-item strong,
+.chat-message strong,
+.daily-weather-strip strong,
+.risk-factors b,
+table th,
+.app-footer strong {
+  color: var(--app-text) !important;
+}
+
+p,
+label,
+.lead,
+.muted,
+.panel-title span,
+.dashboard-head p,
+.section-title p,
+.score span,
+.signal-card span,
+.metric-card span,
+.hardware-card span,
+.weather-card span,
+.weather-card p,
+.stat-list span,
+.rec-item p,
+.chat-message p,
+.daily-weather-strip small,
+.risk-factors small,
+table td,
+.app-footer span,
+.footer-columns span,
+.field span,
+.control-row span,
+.quality-list span,
+.camera-strip span,
+.profile-strip span,
+.pin-lines span,
+.manual-card p {
+  color: var(--app-muted) !important;
+}
+
+.eyebrow,
+.system-pill,
+.mode-tabs button.active,
+.pill,
+.pill-row span,
+.daily-weather-strip span,
+.feature-chip svg,
+.panel-title svg,
+.section-title svg,
+.metric-icon,
+.hardware-card.good div,
+.signal-card div {
+  color: var(--app-accent) !important;
+}
+
+.hardware-card.warn div,
+.metric-card.warn .metric-icon,
+.metric-card.warn div,
+.system-pill.warn {
+  color: var(--app-warn) !important;
+}
+
+.hardware-card.danger div,
+.metric-card.danger .metric-icon,
+.metric-card.danger div,
+.system-pill.danger {
+  color: var(--app-danger) !important;
+}
+
+.hardware-card.idle div,
+.metric-card.idle .metric-icon,
+.metric-card.idle div {
+  color: var(--app-soft) !important;
+}
+
+input,
+select,
+textarea,
+.global-search,
+.global-search input {
+  border-color: var(--app-border) !important;
+  background: var(--app-card-3) !important;
+  color: var(--app-text) !important;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: color-mix(in srgb, var(--app-muted) 76%, transparent) !important;
+}
+
+.primary-button,
+.action-row button,
+.auth-submit,
+.manual-actions .primary-button {
+  border: 0 !important;
+  background: var(--app-action) !important;
+  color: #02140c !important;
+  box-shadow: 0 14px 30px var(--app-glow) !important;
+}
+
+.secondary-button,
+.button-pair button,
+.table-actions button,
+.manual-actions button,
+.dashboard-actions button,
+.icon-button,
+.nav-tabs button {
+  border-color: var(--app-border) !important;
+  background: var(--app-action-soft) !important;
+  color: var(--app-text) !important;
+}
+
+.secondary-button:hover,
+.button-pair button:hover,
+.table-actions button:hover,
+.manual-actions button:hover,
+.dashboard-actions button:hover,
+.icon-button:hover,
+.nav-tabs button:hover,
+.nav-tabs button.active,
+.theme-toggle {
+  border-color: transparent !important;
+  background: var(--app-action) !important;
+  color: #02140c !important;
+}
+
+.button-pair button.selected,
+.button-pair button.off.selected {
+  background: var(--app-action) !important;
+  color: #02140c !important;
+}
+
+.button-pair button.off,
+.secondary-button.danger-button,
+.danger-button {
+  background: color-mix(in srgb, var(--app-danger) 14%, var(--app-card-2)) !important;
+  color: var(--app-text) !important;
+}
+
+.score i,
+.trend-strip span,
+.risk-meter i,
+.bars i {
+  background: var(--app-action) !important;
+  box-shadow: 0 0 18px var(--app-glow);
+}
+
+.farm-visual {
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--app-bg-0) 72%, transparent), color-mix(in srgb, var(--app-accent-3) 20%, transparent)),
+    url('/uploads/rice-disease.jpg') center/cover !important;
+}
+
+.brand img,
+.footer-brand img {
+  background: #ffffff !important;
+}
+
+.form-error {
+  border-color: color-mix(in srgb, var(--app-danger) 48%, transparent) !important;
+  background: color-mix(in srgb, var(--app-danger) 13%, var(--app-card)) !important;
+  color: var(--app-danger) !important;
+}
+
+.form-notice {
+  border-color: color-mix(in srgb, var(--app-accent) 48%, transparent) !important;
+  background: color-mix(in srgb, var(--app-accent) 13%, var(--app-card)) !important;
+  color: var(--app-accent) !important;
+}
+
+table,
+tbody,
+thead,
+tr {
+  background: transparent !important;
+}
+
+td,
+th {
+  border-color: var(--app-border) !important;
+}

@@ -10,6 +10,7 @@ from models import (
     WeatherRecord, WeatherTrainingRun, ChatMessage, ForumPost, ForumReply
 )
 from datetime import datetime, timedelta
+import base64
 import json
 import math
 import os
@@ -17,10 +18,14 @@ from pathlib import Path
 from functools import wraps
 from threading import Thread
 from time import perf_counter
-from disease_ml import (
-    analyze_image_for_disease_guarded as run_disease_analysis,
-    generate_disease_recommendations as build_disease_recommendations
-)
+# Lazy import disease_ml to avoid numpy/cv2 blocking during app startup
+def _get_disease_functions():
+    """Lazy load disease ML functions on first use."""
+    from disease_ml import (
+        analyze_image_for_disease_guarded,
+        generate_disease_recommendations
+    )
+    return analyze_image_for_disease_guarded, generate_disease_recommendations
 from sensor_agent import analyze_sensor_history
 from supabase_bridge import check_connection, delete_records, insert_record, model_payload
 from weather_agent import (
@@ -139,6 +144,69 @@ def disease_upload_folder():
 
 def disease_detected(name, confidence):
     return bool(name) and str(name).strip().lower() not in {'healthy', 'background'} and (confidence or 0) >= 20
+
+
+def configured_disease_service_url():
+    """Return the external disease service URL when remote inference is enabled."""
+    raw_url = (os.environ.get('DISEASE_SERVICE_URL') or '').strip()
+    if not raw_url:
+        return ''
+    return raw_url.rstrip('/')
+
+
+def save_remote_annotated_image(image_path, payload):
+    """Persist an annotated image returned by the disease service next to the upload."""
+    encoded_image = payload.pop('annotated_image_base64', None)
+    if not encoded_image:
+        return payload
+
+    try:
+        suffix = Path(image_path).suffix or '.jpg'
+        annotated_path = str(Path(image_path).with_name(f'{Path(image_path).stem}_annotated{suffix}'))
+        with open(annotated_path, 'wb') as annotated_file:
+            annotated_file.write(base64.b64decode(encoded_image))
+        payload['annotated_image_path'] = annotated_path
+        payload['annotated_image_url'] = public_image_url(annotated_path)
+    except Exception as exc:
+        current_app.logger.warning("Could not save remote annotated disease image: %s", exc)
+
+    return payload
+
+
+def analyze_image_with_disease_service(image_path):
+    """Forward an image to the separate disease model service."""
+    if requests is None:
+        return {'error': 'requests is unavailable, so the disease service cannot be called.'}
+
+    service_url = configured_disease_service_url()
+    if not service_url:
+        return None
+
+    endpoint = f"{service_url}/api/analyze"
+    headers = {}
+    api_key = (os.environ.get('DISEASE_SERVICE_API_KEY') or '').strip()
+    if api_key:
+        headers['X-Disease-Service-Key'] = api_key
+
+    timeout = float(os.environ.get('DISEASE_SERVICE_TIMEOUT_SECONDS', os.environ.get('DISEASE_INFERENCE_TIMEOUT_SECONDS', '75')))
+    try:
+        with open(image_path, 'rb') as image_file:
+            response = requests.post(
+                endpoint,
+                files={'image': (Path(image_path).name, image_file, 'application/octet-stream')},
+                headers=headers,
+                timeout=timeout,
+            )
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = {'error': response.text[:320] or 'Disease service returned a non-JSON response.'}
+        if response.status_code >= 400:
+            payload.setdefault('error', f'Disease service failed with HTTP {response.status_code}.')
+        return save_remote_annotated_image(image_path, payload)
+    except Exception as exc:
+        current_app.logger.error("Disease service request failed: %s", exc)
+        return {'error': f'Disease service unavailable: {exc}', 'primary_disease': None, 'confidence': 0, 'detections': {}, 'boxes': []}
 
 
 def number_or_none(value):
@@ -1832,6 +1900,11 @@ def get_disease_detections(device_id):
 def analyze_image_for_disease(image_path):
     """Analyze image for crop diseases using YOLO"""
     try:
+        remote_result = analyze_image_with_disease_service(image_path)
+        if remote_result is not None:
+            return remote_result
+
+        run_disease_analysis, _ = _get_disease_functions()
         return run_disease_analysis(image_path, logger=current_app.logger)
         
     except Exception as e:
@@ -1841,6 +1914,7 @@ def analyze_image_for_disease(image_path):
 
 def generate_disease_recommendations(disease, confidence):
     """Generate treatment recommendations for detected disease"""
+    _, build_disease_recommendations = _get_disease_functions()
     return build_disease_recommendations(disease, confidence)
 
 
@@ -2731,7 +2805,6 @@ def mirror_weather_training_run(run):
     payload['local_id'] = run.id
     payload['details'] = json.loads(run.details) if run.details else None
     insert_record('weather_training_runs', payload, current_app.logger)
-
 
 
 
